@@ -1,16 +1,7 @@
 # astrbot_plugin_memorix
 
-`astrbot_plugin_memorix` 是将原 `A_memorix` 机制迁移到 AstrBot 的记忆插件。
-目标不是“做一个简化版记忆库”，而是尽量保留 Memorix 的完整工作流：写入、检索、维护、画像、总结、WebUI 管理。
-
-## 它和原 Memorix 的关系
-
-- 保留了原 Memorix 的核心存储与检索机制（图谱 + 向量 + 稀疏检索混合）。
-- 保留了原 WebUI 页面和 `/api/*` 交互契约（可直接使用原有操作习惯）。
-- 在 AstrBot 中新增了命令入口与 LLM Hook，把“记忆注入”并入对话链路。
-
-一句话理解：
-你在 AstrBot 里用的是“插件化的 Memorix 引擎”，不是另起炉灶的轻量实现。
+`astrbot_plugin_memorix` 是一套完整的记忆系统插件，围绕 Memorix 工作流设计：
+消息写入 -> 混合检索 -> 记忆维护 -> 人物画像 -> 总结导入 -> WebUI 运维。
 
 ## 核心能力
 
@@ -63,7 +54,7 @@
 - 默认监听：`0.0.0.0:8092`
 - 端口冲突：自动向后探测（`webui.port_fallback_max_tries`）
 - 默认无鉴权（局域网），可开启 `webui.auth.enabled` + token
-- 保留原 Memorix `/api/*` 兼容接口，便于原有脚本/习惯迁移
+- 使用稳定的 `/api/*` 接口族，支持图谱与记忆运维操作
 
 ## 配置重点
 
