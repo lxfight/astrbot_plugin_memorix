@@ -1,11 +1,11 @@
 {
   "scope": {
     "type": "object",
-    "description": "记忆作用域策略",
+    "description": "记忆作用域策略（决定不同消息在哪些范围共享记忆）",
     "items": {
       "mode": {
         "type": "string",
-        "description": "作用域模式",
+        "description": "作用域模式：同平台共享；同平台按用户隔离；同平台按群隔离（私聊退化到用户）；按 unified_msg_origin 最细粒度隔离",
         "default": "platform_global",
         "options": ["platform_global", "user_global", "group_global", "umo"]
       }
@@ -52,18 +52,13 @@
         "description": "并发请求数",
         "default": 5
       },
-      "auto_detect_dimension": {
-        "type": "bool",
-        "description": "自动探测维度",
-        "default": false
-      },
       "openapi": {
         "type": "object",
         "description": "OpenAI-compatible 端点",
         "items": {
           "base_url": {
             "type": "string",
-            "description": "API Base URL",
+            "description": "API Base URL（可不带 /v1，系统会自动补全）",
             "default": ""
           },
           "api_key": {

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import pickle
 from pathlib import Path
 from typing import Any, Dict
@@ -50,22 +49,6 @@ def _resolve_vector_dimension(settings: AppSettings, vectors_dir: Path) -> int:
     return _safe_int(settings.get("embedding.dimension", 1024), 1024)
 
 
-def _probe_embedding_dimension(adapter: Any, fallback_dim: int) -> int:
-    """
-    Probe real embedding dimension from remote endpoint.
-
-    Only used for fresh stores (no existing vector metadata), so we can
-    auto-align vector store dimension with provider output.
-    """
-    try:
-        detected = int(asyncio.run(adapter._detect_dimension()))  # noqa: SLF001
-        if detected > 0:
-            return detected
-    except Exception as exc:
-        logger.warning("Embedding dimension probe failed, fallback to configured dimension: %s", exc)
-    return int(fallback_dim)
-
-
 def build_context(settings: AppSettings) -> AppContext:
     data_dir = settings.data_dir
     vectors_dir = data_dir / "vectors"
@@ -92,18 +75,7 @@ def build_context(settings: AppSettings) -> AppContext:
         max_retries=_safe_int(endpoint_cfg.get("max_retries", 3), 3),
     )
 
-    metadata_path = vectors_dir / "vectors_metadata.pkl"
     vector_dim = configured_dim
-    auto_detect = bool(settings.get("embedding.auto_detect_dimension", True))
-    if auto_detect and not metadata_path.exists():
-        probed_dim = _probe_embedding_dimension(adapter, configured_dim)
-        if probed_dim != configured_dim:
-            logger.info(
-                "Vector dimension auto-aligned for fresh store: configured=%s, detected=%s",
-                configured_dim,
-                probed_dim,
-            )
-        vector_dim = probed_dim
 
     quantization_map = {
         "float32": QuantizationType.FLOAT32,

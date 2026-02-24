@@ -89,12 +89,6 @@ class ScopeRuntimeManager:
         cfg.setdefault("storage", {})
         cfg["storage"]["data_dir"] = str(self._scope_dir(scope_key))
 
-        cfg.setdefault("embedding", {})
-        embedding_enabled = bool(cfg["embedding"].get("enabled", False))
-        cfg["embedding"]["auto_detect_dimension"] = bool(cfg["embedding"].get("auto_detect_dimension", False))
-        if not embedding_enabled:
-            cfg["embedding"]["auto_detect_dimension"] = False
-
         webui_cfg = cfg.get("webui", {}) if isinstance(cfg.get("webui"), dict) else {}
         auth_cfg = webui_cfg.get("auth", {}) if isinstance(webui_cfg.get("auth"), dict) else {}
         cfg.setdefault("auth", {})

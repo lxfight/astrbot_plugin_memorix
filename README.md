@@ -32,6 +32,21 @@
 默认存储路径：
 `data/plugin_data/astrbot_plugin_memorix/scopes/<platform>/`
 
+## 作用域模式
+
+`scope.mode` 决定“哪些消息共享同一份记忆”：
+
+- `platform_global`：同一平台共用记忆（默认，推荐大多数场景）。
+- `user_global`：同一平台下按用户隔离，每个用户独立记忆。
+- `group_global`：同一平台下按群隔离；群聊按群共享，私聊自动按用户隔离。
+- `umo`：按 `unified_msg_origin` 隔离，粒度最细，隔离最严格。
+
+选择建议：
+
+- 机器人希望“同平台越聊越懂你们整体语境”选 `platform_global`。
+- 强隐私/强隔离需求优先选 `user_global` 或 `umo`。
+- 主要在群聊中使用且希望“每个群形成自己的记忆”选 `group_global`。
+
 ## 依赖
 
 默认依赖包含 `faiss-cpu` 优先使用 Faiss 高性能向量检索。

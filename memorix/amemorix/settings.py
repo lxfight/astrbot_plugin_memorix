@@ -237,6 +237,16 @@ def _first_non_empty_env(keys: list[str]) -> Optional[str]:
     return None
 
 
+def _normalize_openai_base_url(raw_url: str) -> str:
+    value = str(raw_url or "").strip()
+    if not value:
+        return ""
+    normalized = value.rstrip("/")
+    if normalized.lower().endswith("/v1"):
+        return normalized
+    return f"{normalized}/v1"
+
+
 def resolve_openapi_endpoint_config(config: Dict[str, Any], *, section: str = "embedding") -> Dict[str, Any]:
     """
     Resolve OpenAI-compatible endpoint config.
@@ -290,8 +300,11 @@ def resolve_openapi_endpoint_config(config: Dict[str, Any], *, section: str = "e
             merged[field] = _parse_env_value(env_value)
 
     # Sensible defaults for OpenAI-compatible providers.
-    if not str(merged.get("base_url", "") or "").strip():
+    base_url = str(merged.get("base_url", "") or "").strip()
+    if not base_url:
         merged["base_url"] = "https://api.openai.com/v1"
+    else:
+        merged["base_url"] = _normalize_openai_base_url(base_url)
     if "timeout_seconds" not in merged:
         merged["timeout_seconds"] = 30
     if "max_retries" not in merged:
