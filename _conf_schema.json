@@ -80,7 +80,7 @@
           "chat_model": {
             "type": "string",
             "description": "Summary/Profile 模型",
-            "default": ""
+            "default": "gpt-4o"
           },
           "timeout_seconds": {
             "type": "int",
@@ -272,7 +272,7 @@
           },
           "protect_read_endpoints": {
             "type": "bool",
-            "description": "读接口也要求鉴权",
+            "description": "读接口鉴权",
             "default": false
           }
         }

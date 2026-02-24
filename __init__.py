@@ -1,2 +1,0 @@
-"""AstrBot Memorix plugin package."""
-

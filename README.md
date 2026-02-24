@@ -1,11 +1,11 @@
 # astrbot_plugin_memorix
 
-基于 A_memorix 机制的 AstrBot 记忆插件，包含：
+基于 A_memorix 的 AstrBot 记忆插件，包含：
 - 自动消息写入与检索注入
 - 记忆维护（protect / reinforce / restore）
 - 人物画像（query / override）
 - 总结导入（summary_now）
-- 内嵌 WebUI（迁移自 A_memorix）
+- 内嵌 WebUI
 
 ## 主要命令
 
@@ -34,10 +34,10 @@
 
 ## 依赖
 
-见 `requirements.txt`。默认即可运行（numpy 后备向量索引）。
+默认依赖包含 `faiss-cpu` 优先使用 Faiss 高性能向量检索。
 
-如需高性能向量检索，可额外安装：
+若环境中 `faiss-cpu` 初始化失败，插件会自动降级到 numpy 向量后备实现，保证功能可用。
 
-```bash
-pip install faiss-cpu
-```
+## 特别感谢
+
+- [ARC](https://github.com/A-Dawn)
