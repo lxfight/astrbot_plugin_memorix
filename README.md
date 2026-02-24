@@ -1,95 +1,286 @@
-# astrbot_plugin_memorix
+<div align="center">
 
-`astrbot_plugin_memorix` 是一套完整的记忆系统插件，围绕 Memorix 工作流设计：
-消息写入 -> 混合检索 -> 记忆维护 -> 人物画像 -> 总结导入 -> WebUI 运维。
+# Memorix
 
-## 特色亮点
+**为 AstrBot 打造的完整记忆系统插件**
 
-- 不是黑盒缓存：同一条记忆同时落在段落、关系、时间线上，检索结果可追溯、可解释。
-- 不止“记住”，还能“修正”：支持 `protect / reinforce / restore`，可对记忆生命周期做主动干预。
-- 不只聊天增强，还能运营：内置 WebUI，可直接查看图谱、回收站、来源链路和画像覆盖。
-- 不绑死外部模型：即使未开启远程 embedding 也能启动并工作，便于本地和内网部署。
-- 作用域可切换：可在平台共享、用户隔离、群隔离、最细粒度隔离之间按业务切换。
+图谱 + 向量混合检索 · 记忆生命周期管理 · 人物画像 · 总结导入 · 内嵌 WebUI
 
-## 适合场景
+[![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.16-blue)](https://github.com/Soulter/AstrBot)
+[![Version](https://img.shields.io/badge/version-v0.1.1-green)]()
+[![Platforms](https://img.shields.io/badge/platforms-QQ%20%7C%20Telegram%20%7C%20Discord-orange)]()
 
-- 长会话助手：让机器人在多轮对话里保持上下文连续性，而不是每轮“失忆”。
-- 社群机器人：按群沉淀长期知识，避免不同群之间互相污染记忆。
-- 人设驱动助手：通过人物画像和手工覆盖，让回复风格与事实记忆长期稳定。
-- 运营型机器人：需要可视化检查记忆来源、纠错、恢复与审计的团队协作场景。
+</div>
 
-## 核心能力
+---
 
-- 自动消息写入：默认记录消息事件，沉淀为可检索记忆。
-- 混合检索：向量召回 + 稀疏召回 + 图谱信号（可启用 PageRank 重排）。
-- 记忆维护：支持 `protect / reinforce / restore`，并有后台衰减、冻结、剪枝。
-- 人物画像：支持 registry、自动画像、手工覆盖（override）与清除。
-- 总结导入：支持 transcript summary，并回写为结构化知识。
-- WebUI 运维：图谱浏览、关系编辑、来源管理、画像管理、回收站恢复等。
+## 为什么选择 Memorix？
 
-## 从一条消息到一条记忆（工作流）
+| | 传统方案 | Memorix |
+|---|---|---|
+| **存储** | 单一向量库或纯文本缓存 | 段落向量 + 实体图谱 + 时间线三维存储 |
+| **检索** | 仅语义相似度 | 向量 + BM25 稀疏召回 + 图谱 PageRank 重排 |
+| **生命周期** | 记忆只增不减 | 自动衰减 → 冻结 → 剪枝，支持保护/强化/恢复 |
+| **可观测性** | 黑盒 | 内嵌 WebUI，图谱可视化、来源追溯、回收站 |
+| **部署要求** | 依赖外部模型/服务 | 零外部依赖可启动，embedding 按需开启 |
 
-1. 收到消息并按 `scope.mode` 路由到作用域。
-2. 写入 transcript 与段落元数据。
-3. 提取实体/关系并写入图谱、向量索引、稀疏索引。
-4. 用户后续提问时执行混合检索，将结果注入到 LLM System Prompt。
-5. 后台任务定期执行维护（衰减、冻结、剪枝、画像刷新、总结任务）。
+## 核心特性
 
-## 主要命令
+### 混合检索引擎
 
-- `/mem status` 查看作用域、WebUI、调度状态。
-- `/mem query <query> [top_k]` 常规检索。
-- `/mem time <time_from> [time_to] [query]` 时序检索。
-- `/mem protect <hash_or_query> [hours]` 保护记忆（管理员）。
-- `/mem reinforce <hash_or_query>` 强化记忆（管理员）。
-- `/mem restore <hash> [relation|entity]` 从回收站恢复（管理员）。
-- `/mem profile <person_keyword_or_id> [top_k]` 查询人物画像。
-- `/mem profile_override <person_id> <text>` 覆盖画像（管理员）。
-- `/mem profile_clear <person_id>` 清除画像覆盖（管理员）。
-- `/mem summary_now [context_length]` 立即总结当前会话。
-- `/mem ui` 返回 WebUI 地址。
+采用双路检索架构，向量路径（FAISS / Numpy 余弦）与稀疏路径（BM25 + Jieba 中文分词）并行召回，通过加权 RRF 融合排序。可选启用 Personalized PageRank 利用图谱拓扑进行二次重排，无需额外 reranker 模型。
 
-## 作用域模式（scope.mode）
+### 记忆生命周期
 
-`scope.mode` 决定“哪些会话共享同一份记忆”：
+记忆不是静态数据，而是有"生命"的：
 
-- `platform_global`：同平台共享（默认，推荐）。
-- `user_global`：同平台按用户隔离。
-- `group_global`：同平台按群隔离，私聊自动退化到用户隔离。
-- `umo`：按 `unified_msg_origin` 细粒度隔离（最严格）。
+- **衰减**：关系权重按半衰期（默认 24h）指数衰减
+- **冻结**：低于活跃阈值进入冻结态，保留 24h 等待唤醒
+- **剪枝**：权重降至阈值以下则移入回收站
+- **保护** / **强化** / **恢复**：主动干预记忆命运
 
-选择建议：
+### 人物画像系统
 
-- 希望机器人跨群/跨会话持续记住平台语境，用 `platform_global`。
-- 强隔离需求优先 `user_global` 或 `umo`。
-- 以群为单位沉淀记忆，选 `group_global`。
+自动从消息中提取发送者信息，后台定期刷新画像（默认 30 分钟周期，6 小时 TTL）。LLM 请求时自动注入发送者画像作为上下文参考。支持手动覆盖与清除。
 
-## WebUI 说明
+### 总结导入
 
-- 默认监听：`0.0.0.0:8092`
-- 端口冲突：自动向后探测（`webui.port_fallback_max_tries`）
-- 默认无鉴权（局域网），可开启 `webui.auth.enabled` + token
-- 使用稳定的 `/api/*` 接口族，支持图谱与记忆运维操作
+会话 transcript 自动积累，可手动触发或后台自动执行。通过 LLM 对对话生成结构化摘要并回写至记忆系统，支持叙事、事实、结构化等多种知识类型。
 
-## 配置重点
+### 内嵌 WebUI
 
-- `embedding.enabled=false` 时，依然可运行（会使用本地 embedding 回退，不阻塞插件加载）。
-- `embedding.openapi.base_url` 可不带 `/v1`，系统会自动补全。
-- `embedding.openapi.model` 填 embedding 模型；`embedding.openapi.chat_model` 填 summary/chat 模型。
-- `retrieval.enable_ppr` 是图算法重排，不需要额外 reranker 模型。
+基于 FastAPI 的单页管理界面，默认端口 `8092`（端口冲突自动探测），提供：图谱浏览与关系编辑、记忆管理与来源追踪、回收站恢复、人物画像管理。可选 Bearer Token 鉴权。
 
-## 存储目录
+## 工作流
 
-默认存储路径：
-`data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/`
+```
+消息到达
+  │
+  ▼
+① 作用域路由 ── 按 scope.mode 确定记忆归属
+  │
+  ▼
+② 消息写入 ── transcript + 段落元数据 + 向量/稀疏索引 + 实体关系图谱
+  │
+  ▼
+③ 检索注入 ── LLM 请求时混合检索相关记忆，注入 System Prompt
+  │
+  ▼
+④ 响应回写 ── AI 回复同步写入记忆
+  │
+  ▼
+⑤ 后台维护 ── 衰减 / 冻结 / 剪枝 / 画像刷新 / 向量持久化
+```
 
-其中 `<scope_key>` 由 `scope.mode` 计算得到（例如 `aiocqhttp`、`aiocqhttp:user:123456` 等）。
+## 快速开始
 
-## 依赖与性能
+### 安装
 
-- 默认依赖包含 `faiss-cpu`，优先使用高性能向量检索。
-- 若 `faiss-cpu` 初始化失败，会自动降级到 numpy 后备实现，保证功能可用。
+在 AstrBot 插件管理中搜索 `Memorix` 安装，或通过仓库地址安装：
+
+```
+https://github.com/exynos967/astrbot_plugin_memorix
+```
+
+### 最小配置（零配置即可运行）
+
+插件安装后**无需任何配置**即可启动。默认使用本地 embedding 回退，所有功能可用。
+
+### 推荐配置（启用远程 Embedding）
+
+在插件配置页中设置以下项以获得最佳检索效果：
+
+| 配置项 | 值 | 说明 |
+|---|---|---|
+| `embedding.enabled` | `true` | 启用远程 embedding |
+| `embedding.openapi.base_url` | 你的 API 地址 | OpenAI 兼容端点，可不带 `/v1` |
+| `embedding.openapi.api_key` | 你的 API Key | - |
+| `embedding.openapi.model` | `text-embedding-3-large` | Embedding 模型 |
+| `embedding.openapi.chat_model` | `gpt-4o` | 用于总结和画像生成 |
+
+## 命令参考
+
+### 通用命令
+
+| 命令 | 说明 |
+|---|---|
+| `/mem status` | 查看作用域、WebUI、调度器状态 |
+| `/mem query <关键词> [top_k]` | 混合语义检索 |
+| `/mem time <起始时间> [结束时间] [关键词]` | 时序检索 |
+| `/mem profile [人物关键词] [top_k]` | 查询人物画像 |
+| `/mem summary_now [上下文长度]` | 立即生成会话总结并写入记忆 |
+| `/mem ui` | 获取 WebUI 访问地址 |
+
+### 管理员命令
+
+| 命令 | 说明 |
+|---|---|
+| `/mem protect <hash或关键词> [小时数]` | 保护记忆不被衰减（不填时长则永久保护） |
+| `/mem reinforce <hash或关键词>` | 强化记忆热度，自动保护 24h |
+| `/mem restore <hash> [relation\|entity]` | 从回收站恢复已删除的记忆 |
+| `/mem profile_override <人物ID> <文本>` | 手动覆盖人物画像 |
+| `/mem profile_clear <人物ID>` | 清除画像覆盖，恢复自动生成 |
+
+## 作用域模式
+
+`scope.mode` 决定哪些会话共享同一份记忆：
+
+| 模式 | 行为 | 适用场景 |
+|---|---|---|
+| `platform_global` | 同平台所有会话共享 **（默认）** | 希望机器人跨群/跨会话保持记忆连续性 |
+| `user_global` | 同平台按用户隔离 | 需要用户级隐私隔离 |
+| `group_global` | 同平台按群隔离，私聊退化为用户隔离 | 以群为单位沉淀独立记忆 |
+| `umo` | 按 `unified_msg_origin` 最细粒度隔离 | 最严格的隔离需求 |
+
+## 存储架构
+
+```
+data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
+├── vectors/      # FAISS / Numpy 向量索引
+├── graph/        # SciPy 稀疏矩阵图谱
+└── metadata/     # SQLite 元数据（段落/实体/关系/对话/画像/任务）
+```
+
+| 存储层 | 实现 | 职责 |
+|---|---|---|
+| 向量存储 | FAISS（降级 Numpy 余弦） | 段落和关系的语义向量索引 |
+| 图谱存储 | SciPy 稀疏矩阵 | 实体节点 + 关系边权重图 |
+| 元数据存储 | SQLite | 结构化数据与全文检索（FTS5） |
+
+## 完整配置参考
+
+<details>
+<summary>点击展开全部配置项</summary>
+
+### 作用域（scope）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `scope.mode` | string | `platform_global` | 作用域模式 |
+
+### 写入（ingest）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `ingest.record_all_events` | bool | `true` | 是否记录所有消息事件 |
+| `ingest.skip_empty_text` | bool | `true` | 忽略空文本消息 |
+
+### Embedding
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `embedding.enabled` | bool | `false` | 启用远程 embedding |
+| `embedding.dimension` | int | `1024` | 向量维度 |
+| `embedding.batch_size` | int | `32` | 批量请求大小 |
+| `embedding.max_concurrent` | int | `5` | 最大并发请求数 |
+| `embedding.openapi.base_url` | string | `""` | API 地址（可不带 `/v1`） |
+| `embedding.openapi.api_key` | string | `""` | API Key |
+| `embedding.openapi.model` | string | `text-embedding-3-large` | Embedding 模型 |
+| `embedding.openapi.chat_model` | string | `gpt-4o` | Summary / Profile 模型 |
+| `embedding.openapi.timeout_seconds` | int | `30` | 请求超时（秒） |
+| `embedding.openapi.max_retries` | int | `3` | 最大重试次数 |
+
+### 检索（retrieval）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `retrieval.top_k_final` | int | `10` | 默认返回结果数 |
+| `retrieval.enable_ppr` | bool | `true` | 启用 PageRank 重排 |
+| `retrieval.enable_parallel` | bool | `true` | 并行检索 |
+| `retrieval.temporal.enabled` | bool | `true` | 启用时序检索 |
+| `retrieval.temporal.default_top_k` | int | `10` | 时序检索默认 top_k |
+
+### 记忆维护（memory）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `memory.enabled` | bool | `true` | 启用记忆维护 |
+| `memory.half_life_hours` | float | `24.0` | 半衰期（小时） |
+| `memory.base_decay_interval_hours` | float | `1.0` | 衰减执行周期（小时） |
+| `memory.prune_threshold` | float | `0.1` | 剪枝阈值 |
+| `memory.freeze_duration_hours` | float | `24.0` | 冻结保留时长（小时） |
+| `memory.max_weight` | float | `10.0` | 关系边最大权重 |
+| `memory.auto_protect_ttl_hours` | float | `24.0` | 强化自动保护时长（小时） |
+
+### 人物画像（person_profile）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `person_profile.enabled` | bool | `true` | 启用人物画像 |
+| `person_profile.profile_ttl_minutes` | int | `360` | 画像缓存 TTL（分钟） |
+| `person_profile.top_k_evidence` | int | `12` | 画像生成证据数量 |
+
+### 总结（summarization）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `summarization.enabled` | bool | `true` | 启用总结导入 |
+| `summarization.model_name` | string | `auto` | 总结模型（`auto` 使用 chat_model） |
+| `summarization.context_length` | int | `50` | 总结上下文长度 |
+| `summarization.default_knowledge_type` | string | `narrative` | 总结知识类型（narrative / factual / mixed / structured / auto） |
+
+### WebUI
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `webui.enabled` | bool | `true` | 启用 WebUI |
+| `webui.host` | string | `0.0.0.0` | 监听地址 |
+| `webui.port` | int | `8092` | 监听端口 |
+| `webui.port_fallback_max_tries` | int | `20` | 端口冲突回退尝试次数 |
+| `webui.scope` | string | `aiocqhttp` | WebUI 绑定作用域 |
+| `webui.auth.enabled` | bool | `false` | 启用 Bearer 鉴权 |
+| `webui.auth.write_tokens` | list | `[]` | 写接口 Token 列表 |
+| `webui.auth.read_tokens` | list | `[]` | 读接口 Token 列表 |
+| `webui.auth.protect_read_endpoints` | bool | `false` | 是否对读接口启用鉴权 |
+
+</details>
+
+## 依赖
+
+| 包 | 用途 |
+|---|---|
+| `numpy` | 向量计算 & 降级向量存储 |
+| `scipy` | 图谱稀疏矩阵 |
+| `faiss-cpu` | 高性能向量索引（失败自动降级 Numpy） |
+| `fastapi` + `uvicorn` | 内嵌 WebUI 服务 |
+| `pydantic` | 数据校验 |
+| `jieba` | 中文分词（BM25 检索） |
+| `openai` | OpenAI 兼容 API 客户端 |
+
+## 常见问题
+
+<details>
+<summary>没有配置 Embedding API 能用吗？</summary>
+
+可以。`embedding.enabled=false`（默认值）时，插件使用本地确定性向量回退，所有功能正常加载。配置 Embedding API 后检索效果会显著提升。
+
+</details>
+
+<details>
+<summary>FAISS 安装失败怎么办？</summary>
+
+插件会自动降级到 Numpy 余弦相似度实现，功能完全可用，仅在超大规模数据时性能有差异。无需手动干预。
+
+</details>
+
+<details>
+<summary>PageRank 重排需要额外模型吗？</summary>
+
+不需要。`retrieval.enable_ppr` 基于图谱拓扑结构计算，是纯算法重排，不依赖任何外部模型。
+
+</details>
+
+<details>
+<summary>如何清理旧记忆？</summary>
+
+记忆系统自带生命周期管理：衰减 → 冻结 → 剪枝自动进行。也可通过 WebUI 手动管理，或使用 `/mem protect` 保护重要记忆不被清理。
+
+</details>
 
 ## 特别感谢
 
 - [ARC](https://github.com/A-Dawn)
+
+## 许可证
+
+本项目遵循 [MIT License](LICENSE)。
