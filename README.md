@@ -283,4 +283,4 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 ## 许可证
 
-本项目遵循 [MIT License](LICENSE)。
+本项目遵循 [AGPLv3 License](LICENSE)。
