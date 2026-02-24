@@ -282,6 +282,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 ## 特别感谢
 
 - [ARC](https://github.com/A-Dawn)
+- [A_memorix](https://github.com/A-Dawn/A_memorix/tree/basic)
 
 ## 许可证
 
