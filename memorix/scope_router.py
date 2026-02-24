@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+
+_SCOPE_PATTERN = re.compile(r"[^0-9A-Za-z:._-]+")
 
 
 @dataclass(slots=True)
@@ -32,6 +35,13 @@ class ScopeRouter:
 
     @staticmethod
     def _sanitize(raw: str) -> str:
-        text = str(raw or "default").strip().replace("/", "_").replace("\\", "_")
+        text = str(raw or "default").strip()
+        text = text.replace("/", "_").replace("\\", "_")
+        text = re.sub(r"\s+", "_", text)
+        text = _SCOPE_PATTERN.sub("_", text)
+        text = text.strip("._")
+        if ".." in text:
+            text = text.replace("..", "_")
+        if text in {"", ".", ".."}:
+            return "default"
         return text or "default"
-

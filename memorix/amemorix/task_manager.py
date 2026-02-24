@@ -78,8 +78,10 @@ class TaskManager:
     async def _import_worker(self, worker_idx: int) -> None:
         while not self._stopping:
             task_id = ""
+            dequeued = False
             try:
                 task_id, payload = await self.import_queue.get()
+                dequeued = True
                 existing = self.ctx.metadata_store.get_async_task(task_id)
                 if existing and existing.get("cancel_requested"):
                     self.ctx.metadata_store.update_async_task(
@@ -87,7 +89,6 @@ class TaskManager:
                         status=TASK_STATUS_CANCELED,
                         finished_at=datetime.datetime.now().timestamp(),
                     )
-                    self.import_queue.task_done()
                     continue
 
                 now = datetime.datetime.now().timestamp()
@@ -114,14 +115,16 @@ class TaskManager:
                     )
                 logger.error("Import worker %s failed task %s: %s", worker_idx, task_id, exc, exc_info=True)
             finally:
-                if task_id:
+                if dequeued:
                     self.import_queue.task_done()
 
     async def _summary_worker(self, worker_idx: int) -> None:
         while not self._stopping:
             task_id = ""
+            dequeued = False
             try:
                 task_id, payload = await self.summary_queue.get()
+                dequeued = True
                 existing = self.ctx.metadata_store.get_async_task(task_id)
                 if existing and existing.get("cancel_requested"):
                     self.ctx.metadata_store.update_async_task(
@@ -129,7 +132,6 @@ class TaskManager:
                         status=TASK_STATUS_CANCELED,
                         finished_at=datetime.datetime.now().timestamp(),
                     )
-                    self.summary_queue.task_done()
                     continue
 
                 self.ctx.metadata_store.update_async_task(
@@ -169,7 +171,7 @@ class TaskManager:
                     )
                 logger.error("Summary worker %s failed task %s: %s", worker_idx, task_id, exc, exc_info=True)
             finally:
-                if task_id:
+                if dequeued:
                     self.summary_queue.task_done()
 
     async def _auto_save_loop(self) -> None:
@@ -276,4 +278,3 @@ class TaskManager:
                 break
             except Exception as exc:
                 logger.warning("Person profile refresh loop error: %s", exc)
-

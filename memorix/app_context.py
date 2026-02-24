@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
@@ -16,6 +17,8 @@ from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 from .amemorix.bootstrap import build_context
 from .amemorix.settings import DEFAULT_CONFIG, AppSettings
 from .amemorix.task_manager import TaskManager
+
+_SCOPE_DIR_PATTERN = re.compile(r"[^0-9A-Za-z._-]+")
 
 
 def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
@@ -80,10 +83,35 @@ class ScopeRuntimeManager:
         data_root = Path(data_root_raw) if data_root_raw else (Path.cwd() / "data")
         base = data_root / "plugin_data" / self.plugin_name / "scopes"
         base.mkdir(parents=True, exist_ok=True)
-        safe_scope = str(scope_key or "default").replace("/", "_").replace("\\", "_")
-        target = base / safe_scope
-        logger.debug("resolved scope dir: scope=%s dir=%s", safe_scope, target)
+        base_resolved = base.resolve()
+        safe_scope = self._sanitize_scope_dirname(scope_key)
+        target = (base_resolved / safe_scope).resolve()
+        try:
+            target.relative_to(base_resolved)
+        except ValueError:
+            fallback = f"scope_{hashlib.sha256(str(scope_key or '').encode('utf-8')).hexdigest()[:16]}"
+            logger.warning(
+                "unsafe scope dir detected, fallback applied: scope=%s fallback=%s",
+                scope_key,
+                fallback,
+            )
+            target = base_resolved / fallback
+        target.mkdir(parents=True, exist_ok=True)
+        logger.debug("resolved scope dir: scope=%s dir=%s", target.name, target)
         return target
+
+    @staticmethod
+    def _sanitize_scope_dirname(scope_key: str) -> str:
+        text = str(scope_key or "default").strip()
+        text = text.replace("/", "_").replace("\\", "_").replace(":", "_")
+        text = re.sub(r"\s+", "_", text)
+        text = _SCOPE_DIR_PATTERN.sub("_", text)
+        text = text.strip("._")
+        if ".." in text:
+            text = text.replace("..", "_")
+        if text in {"", ".", ".."}:
+            return "default"
+        return text[:128] or "default"
 
     def _build_scope_config(self, scope_key: str) -> Dict[str, Any]:
         cfg = _deep_merge(DEFAULT_CONFIG, self.plugin_config)
