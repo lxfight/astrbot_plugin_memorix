@@ -8,17 +8,13 @@ import numpy as np
 from enum import Enum
 from typing import Tuple, Union
 
-from amemorix.common.logging import get_logger
-
-logger = get_logger("A_Memorix.Quantization")
-
+from astrbot.api import logger
 
 class QuantizationType(Enum):
     """量化类型枚举"""
     FLOAT32 = "float32"  # 无量化
     INT8 = "int8"        # 标量量化（8位整数）
     PQ = "pq"            # 乘积量化（Product Quantization）
-
 
 def quantize_vector(
     vector: np.ndarray,
@@ -47,7 +43,6 @@ def quantize_vector(
 
     else:
         raise ValueError(f"不支持的量化类型: {quant_type}")
-
 
 def dequantize_vector(
     quantized_vector: Union[np.ndarray, Tuple[np.ndarray, np.ndarray]],
@@ -78,7 +73,6 @@ def dequantize_vector(
 
     else:
         raise ValueError(f"不支持的量化类型: {quant_type}")
-
 
 def _scalar_quantize_int8(vector: np.ndarray) -> np.ndarray:
     """
@@ -118,7 +112,6 @@ def _scalar_quantize_int8(vector: np.ndarray) -> np.ndarray:
 
     return quantized
 
-
 def _scalar_dequantize_int8(quantized: np.ndarray) -> np.ndarray:
     """
     标量反量化：int8 -> float32
@@ -138,7 +131,6 @@ def _scalar_dequantize_int8(quantized: np.ndarray) -> np.ndarray:
     # 尝试查找参数 (这里只是演示逻辑，实际应从存储中读取)
     # return (quantized.astype(np.float32) + 128.0) / 255.0 * (max - min) + min
     return (quantized.astype(np.float32) + 128.0) / 255.0
-
 
 def quantize_matrix(
     matrix: np.ndarray,
@@ -174,7 +166,6 @@ def quantize_matrix(
     else:
         raise ValueError(f"不支持的量化类型: {quant_type}")
 
-
 def dequantize_matrix(
     quantized_matrix: np.ndarray,
     quant_type: QuantizationType = QuantizationType.INT8,
@@ -208,7 +199,6 @@ def dequantize_matrix(
 
     else:
         raise ValueError(f"不支持的量化类型: {quant_type}")
-
 
 def estimate_memory_reduction(
     num_vectors: int,
@@ -244,7 +234,6 @@ def estimate_memory_reduction(
 
     return original_mb, quantized_mb, reduction_ratio
 
-
 def estimate_compression_stats(
     num_vectors: int,
     dimension: int,
@@ -274,7 +263,6 @@ def estimate_compression_stats(
         "saved_mb": round(original_mb - quantized_mb, 2),
         "compression_ratio": round(ratio * 100, 2),
     }
-
 
 def _product_quantize(
     vector: np.ndarray, m: int = 8, k: int = 256
@@ -321,7 +309,6 @@ def _product_quantize(
         codes[i] = code
 
     return codes, centroids
-
 
 def _product_dequantize(codes: np.ndarray, centroids: np.ndarray) -> np.ndarray:
     """

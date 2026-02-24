@@ -8,7 +8,7 @@ import json
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from amemorix.llm_client import LLMClient
 
 from ..embedding.api_adapter import EmbeddingAPIAdapter
@@ -19,8 +19,6 @@ from ..storage import (
     VectorStore,
     get_knowledge_type_from_string,
 )
-
-logger = get_logger("A_Memorix.SummaryImporter")
 
 SUMMARY_PROMPT_TEMPLATE = """
 你需要对聊天记录进行结构化总结，并抽取关键实体与关系。
@@ -42,7 +40,6 @@ SUMMARY_PROMPT_TEMPLATE = """
 2. 实体与关系尽量使用原文措辞。
 3. 如果没有关系，relations 返回空数组。
 """
-
 
 class SummaryImporter:
     def __init__(

@@ -10,11 +10,8 @@ from typing import Any, Dict, List, Optional
 from core.storage import KnowledgeType, detect_knowledge_type
 from core.utils.time_parser import normalize_time_meta
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from amemorix.context import AppContext
-
-logger = get_logger("A_Memorix.ImportService")
-
 
 class ImportService:
     def __init__(self, ctx: AppContext):

@@ -10,7 +10,7 @@ import json
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 
 from ..embedding.api_adapter import EmbeddingAPIAdapter
 from ..retrieval import (
@@ -21,9 +21,6 @@ from ..retrieval import (
     SparseBM25Config,
 )
 from ..storage import GraphStore, MetadataStore, VectorStore
-
-logger = get_logger("A_Memorix.PersonProfileService")
-
 
 class PersonProfileService:
     def __init__(

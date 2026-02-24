@@ -8,13 +8,12 @@ from ..webui.routes_compat import MemorixServer
 
 from .auth import BearerAuthMiddleware
 from .bootstrap import build_context
-from .common.logging import get_logger, setup_logging
+from astrbot.api import logger
+
+from .common.logging import setup_logging
 from .routers.v1_router import router as v1_router
 from .settings import AppSettings
 from .task_manager import TaskManager
-
-logger = get_logger("A_Memorix.App")
-
 
 def create_app(*, settings: AppSettings) -> FastAPI:
     setup_logging("DEBUG" if bool(settings.get("advanced.debug", False)) else "INFO")

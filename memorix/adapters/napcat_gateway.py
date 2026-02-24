@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from astrbot.api import logger
+
 
 class NapcatGateway:
     """Best-effort gateway; only active for aiocqhttp runtime events."""
@@ -24,7 +26,8 @@ class NapcatGateway:
             result = await client.call_action("get_msg", message_id=msg_id)
             if isinstance(result, dict):
                 return result
+            logger.warning("napcat get_msg returned invalid payload: type=%s message_id=%s", type(result), msg_id)
         except Exception:
+            logger.warning("napcat get_msg failed: message_id=%s", msg_id, exc_info=True)
             return None
         return None
-

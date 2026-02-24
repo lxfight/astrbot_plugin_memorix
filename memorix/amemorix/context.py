@@ -13,11 +13,8 @@ from core.retrieval import DynamicThresholdFilter, DualPathRetriever, SparseBM25
 from core.storage import GraphStore, MetadataStore, VectorStore
 from core.utils.person_profile_service import PersonProfileService
 
-from .common.logging import get_logger
+from astrbot.api import logger
 from .settings import AppSettings
-
-logger = get_logger("A_Memorix.AppContext")
-
 
 @dataclass
 class AppContext:

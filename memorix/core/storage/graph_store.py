@@ -27,19 +27,15 @@ except ImportError:
     HAS_SCIPY = False
 
 import contextlib
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from ..utils.hash import compute_hash
 from ..utils.io import atomic_write
-
-logger = get_logger("A_Memorix.GraphStore")
-
 
 class GraphModificationMode(Enum):
     """图修改模式"""
     BATCH = "batch"             # 批量模式 (默认, 适合一次性加载)
     INCREMENTAL = "incremental" # 增量模式 (适合频繁随机写入, 使用LIL)
     READ_ONLY = "read_only"     # 只读模式 (适合计算, CSR/CSC)
-
 
 class GraphStore:
     """
@@ -439,7 +435,6 @@ class GraphStore:
                 self._adjacency = csr_matrix((new_data, (new_rows, new_cols)), shape=(n, n))
             else: # csc
                 self._adjacency = csc_matrix((new_data, (new_rows, new_cols)), shape=(n, n))
-
 
         deleted_count = len(existing_nodes)
         self._total_nodes_deleted += deleted_count
@@ -895,7 +890,6 @@ class GraphStore:
             return count
         return 0
 
-
     # =========================================================================
     # V5 Memory System Methods (Graph Level)
     # =========================================================================
@@ -1325,5 +1319,4 @@ class GraphStore:
         self._adjacency_dirty = True
         logger.info(f"已从 {count} 条哈希重建边哈希映射，覆盖 {len(self._edge_hash_map)} 条边")
         return count
-
 

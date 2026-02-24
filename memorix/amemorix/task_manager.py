@@ -7,7 +7,7 @@ import datetime
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from amemorix.context import AppContext
 from amemorix.services import (
     ImportService,
@@ -16,14 +16,11 @@ from amemorix.services import (
     SummaryService,
 )
 
-logger = get_logger("A_Memorix.TaskManager")
-
 TASK_STATUS_QUEUED = "queued"
 TASK_STATUS_RUNNING = "running"
 TASK_STATUS_SUCCEEDED = "succeeded"
 TASK_STATUS_FAILED = "failed"
 TASK_STATUS_CANCELED = "canceled"
-
 
 class TaskManager:
     def __init__(self, ctx: AppContext):

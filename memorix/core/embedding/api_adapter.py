@@ -15,10 +15,7 @@ from typing import List, Optional, Union
 import numpy as np
 from openai import AsyncOpenAI
 
-from amemorix.common.logging import get_logger
-
-logger = get_logger("A_Memorix.EmbeddingAPIAdapter")
-
+from astrbot.api import logger
 
 def _first_env(*keys: str) -> str:
     for key in keys:
@@ -26,7 +23,6 @@ def _first_env(*keys: str) -> str:
         if value:
             return value
     return ""
-
 
 class EmbeddingAPIAdapter:
     def __init__(
@@ -274,7 +270,6 @@ class EmbeddingAPIAdapter:
             f"dim={self.get_embedding_dimension()}, "
             f"encoded={self._total_encoded})"
         )
-
 
 def create_embedding_api_adapter(
     batch_size: int = 32,

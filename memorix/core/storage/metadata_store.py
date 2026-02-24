@@ -12,12 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union, List, Dict, Any, Tuple
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from ..utils.hash import compute_hash, normalize_text
 from ..utils.time_parser import normalize_time_meta
-
-logger = get_logger("A_Memorix.MetadataStore")
-
 
 class MetadataStore:
     """
@@ -1703,7 +1700,6 @@ class MetadataStore:
             })
         return results
 
-
     def search_paragraphs_by_content(self, content_query: str) -> List[Dict[str, Any]]:
         """按内容模糊搜索段落"""
         cursor = self._conn.cursor()
@@ -2100,7 +2096,6 @@ class MetadataStore:
             logger.error(f"DB Transaction failed: {e}")
             raise e
 
-
     def clear_all(self) -> None:
         """清空所有表数据"""
         cursor = self._conn.cursor()
@@ -2112,8 +2107,6 @@ class MetadataStore:
             cursor.execute(f"DELETE FROM {table}")
         self._conn.commit()
         logger.info("元数据存储所有表已清空")
-
-
 
     def update_relation_timestamp(self, hash_value: str, access_count_delta: int = 1) -> None:
         """更新关系的访问时间和计数"""
@@ -2361,7 +2354,6 @@ class MetadataStore:
         """, (now,))
         
         return [row[0] for row in cursor.fetchall()]
-
 
     
     def get_deleted_relations(self, limit: int = 50) -> List[Dict[str, Any]]:

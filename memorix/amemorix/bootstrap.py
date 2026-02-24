@@ -14,12 +14,9 @@ from core.storage import GraphStore, MetadataStore, QuantizationType, SparseMatr
 from core.utils.person_profile_service import PersonProfileService
 
 from ..storage.vector_numpy_store import NumpyCompatVectorStore
-from .common.logging import get_logger
+from astrbot.api import logger
 from .context import AppContext
 from .settings import AppSettings, resolve_openapi_endpoint_config
-
-logger = get_logger("A_Memorix.Bootstrap")
-
 
 def _safe_int(value: Any, default: int) -> int:
     try:
@@ -27,13 +24,11 @@ def _safe_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
 
-
 def _safe_float(value: Any, default: float) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
-
 
 def _resolve_vector_dimension(settings: AppSettings, vectors_dir: Path) -> int:
     metadata_path = vectors_dir / "vectors_metadata.pkl"
@@ -47,7 +42,6 @@ def _resolve_vector_dimension(settings: AppSettings, vectors_dir: Path) -> int:
         except Exception as exc:
             logger.warning("Failed to read existing vector metadata dimension: %s", exc)
     return _safe_int(settings.get("embedding.dimension", 1024), 1024)
-
 
 def build_context(settings: AppSettings) -> AppContext:
     data_dir = settings.data_dir

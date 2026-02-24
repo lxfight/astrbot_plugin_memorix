@@ -6,12 +6,11 @@ import socket
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from astrbot.api import logger
+
 from ..amemorix.auth import BearerAuthMiddleware
-from ..amemorix.common.logging import get_logger
 from ..app_context import ScopeRuntimeManager
 from .routes_compat import MemorixServer
-
-logger = get_logger("A_Memorix.EmbeddedWebUI")
 
 
 @dataclass(slots=True)
@@ -20,7 +19,6 @@ class WebUIServerState:
     host: str = ""
     port: int = 0
     url: str = ""
-
 
 class EmbeddedWebUIServer:
     def __init__(self, runtime_manager: ScopeRuntimeManager, plugin_config: Dict[str, Any]):

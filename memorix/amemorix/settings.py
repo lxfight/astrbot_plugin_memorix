@@ -11,10 +11,7 @@ from typing import Any, Dict, Optional
 
 import tomllib
 
-from .common.logging import get_logger
-
-logger = get_logger("A_Memorix.Settings")
-
+from astrbot.api import logger
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "server": {"host": "0.0.0.0", "port": 8082, "workers": 1},
@@ -155,7 +152,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
 }
 
-
 def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
     out = copy.deepcopy(base)
     for key, value in (patch or {}).items():
@@ -164,7 +160,6 @@ def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
         else:
             out[key] = value
     return out
-
 
 def _parse_env_value(raw: str) -> Any:
     text = raw.strip()
@@ -188,7 +183,6 @@ def _parse_env_value(raw: str) -> Any:
             return text
     return text
 
-
 def _set_nested(config: Dict[str, Any], path: list[str], value: Any) -> None:
     cur: Dict[str, Any] = config
     for key in path[:-1]:
@@ -198,7 +192,6 @@ def _set_nested(config: Dict[str, Any], path: list[str], value: Any) -> None:
             cur[key] = existing
         cur = existing
     cur[path[-1]] = value
-
 
 def _apply_env_overrides(config: Dict[str, Any], prefix: str = "AMEMORIX__") -> Dict[str, Any]:
     out = copy.deepcopy(config)
@@ -214,7 +207,6 @@ def _apply_env_overrides(config: Dict[str, Any], prefix: str = "AMEMORIX__") -> 
         _set_nested(out, parts, _parse_env_value(env_value))
     return out
 
-
 def _overlay_non_empty(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
     out = copy.deepcopy(base)
     for key, value in (overlay or {}).items():
@@ -228,14 +220,12 @@ def _overlay_non_empty(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[st
         out[key] = value
     return out
 
-
 def _first_non_empty_env(keys: list[str]) -> Optional[str]:
     for key in keys:
         value = str(os.getenv(key, "") or "").strip()
         if value:
             return value
     return None
-
 
 def _normalize_openai_base_url(raw_url: str) -> str:
     value = str(raw_url or "").strip()
@@ -245,7 +235,6 @@ def _normalize_openai_base_url(raw_url: str) -> str:
     if normalized.lower().endswith("/v1"):
         return normalized
     return f"{normalized}/v1"
-
 
 def resolve_openapi_endpoint_config(config: Dict[str, Any], *, section: str = "embedding") -> Dict[str, Any]:
     """
@@ -311,7 +300,6 @@ def resolve_openapi_endpoint_config(config: Dict[str, Any], *, section: str = "e
         merged["max_retries"] = 3
     return merged
 
-
 def mask_sensitive(config: Dict[str, Any]) -> Dict[str, Any]:
     out = copy.deepcopy(config)
 
@@ -334,7 +322,6 @@ def mask_sensitive(config: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(endpoint_cfg, dict) and "api_key" in endpoint_cfg:
                 endpoint_cfg["api_key"] = _mask(endpoint_cfg["api_key"])
     return out
-
 
 @dataclass(slots=True)
 class AppSettings:

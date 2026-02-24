@@ -15,10 +15,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-from amemorix.common.logging import get_logger
-
-logger = get_logger("A_Memorix.MemoryMonitor")
-
+from astrbot.api import logger
 
 class MemoryMonitor:
     """
@@ -162,7 +159,6 @@ class MemoryMonitor:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """上下文管理器出口"""
         self.stop()
-
 
 def get_memory_info() -> dict:
     """

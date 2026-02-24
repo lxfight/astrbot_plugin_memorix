@@ -19,7 +19,7 @@ try:
 except ImportError:
     HAS_SENTENCE_TRANSFORMERS = False
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from .presets import (
     EmbeddingModelConfig,
     get_custom_config,
@@ -27,9 +27,6 @@ from .presets import (
     are_models_compatible,
 )
 from ..utils.quantization import QuantizationType
-
-logger = get_logger("A_Memorix.EmbeddingManager")
-
 
 class EmbeddingManager:
     """
@@ -464,9 +461,6 @@ class EmbeddingManager:
             f"loaded={self.is_model_loaded}, "
             f"cache={len(self._embedding_cache)})"
         )
-
-
-
 
 def create_embedding_manager_from_config(
     model_name: str,

@@ -10,14 +10,12 @@ from pathlib import Path
 from typing import Any, Dict
 
 import numpy as np
+from astrbot.api import logger
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 from .amemorix.bootstrap import build_context
-from .amemorix.common.logging import get_logger
 from .amemorix.settings import DEFAULT_CONFIG, AppSettings
 from .amemorix.task_manager import TaskManager
-
-logger = get_logger("A_Memorix.ScopeRuntime")
 
 
 def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
@@ -63,14 +61,12 @@ class LocalEmbeddingAdapter:
             vec = vec / norm
         return vec.astype(np.float32)
 
-
 @dataclass(slots=True)
 class ScopeRuntime:
     scope_key: str
     settings: AppSettings
     context: Any
     task_manager: TaskManager
-
 
 class ScopeRuntimeManager:
     def __init__(self, *, plugin_name: str, plugin_config: Dict[str, Any]):

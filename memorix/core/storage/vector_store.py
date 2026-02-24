@@ -21,12 +21,9 @@ try:
 except ImportError:
     HAS_FAISS = False
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from ..utils.quantization import QuantizationType
 from ..utils.io import atomic_write, atomic_save_path
-
-logger = get_logger("A_Memorix.VectorStore")
-
 
 class VectorStore:
     """
@@ -631,5 +628,4 @@ class VectorStore:
     def __contains__(self, hash_value: str) -> bool:
         """Check if a hash exists in the store"""
         return hash_value in self._known_hashes and self._generate_id(hash_value) not in self._deleted_ids
-
 

@@ -11,10 +11,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from amemorix.settings import mask_sensitive
-
-logger = get_logger("A_Memorix.Server")
 
 class EdgeWeightUpdate(BaseModel):
     source: str
@@ -1220,7 +1218,6 @@ class MemorixServer:
             except Exception as e:
                 logger.error(f"Delete person profile override failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
-
 
         @self.app.post("/api/save")
         async def manual_save():

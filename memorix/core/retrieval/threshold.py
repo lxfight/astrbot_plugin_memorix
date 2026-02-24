@@ -9,11 +9,8 @@ from typing import List, Dict, Any, Optional, Tuple, Union
 from dataclasses import dataclass
 from enum import Enum
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from .dual_path import RetrievalResult
-
-logger = get_logger("A_Memorix.DynamicThresholdFilter")
-
 
 class ThresholdMethod(Enum):
     """阈值计算方法"""
@@ -22,7 +19,6 @@ class ThresholdMethod(Enum):
     STD_DEV = "std_dev"        # 标准差
     GAP_DETECTION = "gap_detection"  # 跳变检测
     ADAPTIVE = "adaptive"      # 自适应（综合多种方法）
-
 
 @dataclass
 class ThresholdConfig:
@@ -66,7 +62,6 @@ class ThresholdConfig:
 
         if self.min_results < 0:
             raise ValueError(f"min_results必须大于等于0: {self.min_results}")
-
 
 class DynamicThresholdFilter:
     """

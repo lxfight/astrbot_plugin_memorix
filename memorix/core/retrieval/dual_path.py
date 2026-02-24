@@ -11,7 +11,7 @@ from enum import Enum
 
 import numpy as np
 
-from amemorix.common.logging import get_logger
+from astrbot.api import logger
 from ..storage import VectorStore, GraphStore, MetadataStore
 from ..embedding.api_adapter import EmbeddingAPIAdapter as EmbeddingManager
 from ..utils.matcher import AhoCorasick
@@ -19,16 +19,12 @@ from ..utils.time_parser import format_timestamp
 from .pagerank import PersonalizedPageRank, PageRankConfig
 from .sparse_bm25 import SparseBM25Config, SparseBM25Index
 
-logger = get_logger("A_Memorix.DualPathRetriever")
-
-
 class RetrievalStrategy(Enum):
     """检索策略"""
 
     PARA_ONLY = "paragraph_only"  # 仅段落检索
     REL_ONLY = "relation_only"   # 仅关系检索
     DUAL_PATH = "dual_path"      # 双路检索（推荐）
-
 
 @dataclass
 class RetrievalResult:
@@ -61,7 +57,6 @@ class RetrievalResult:
             "source": self.source,
             "metadata": self.metadata,
         }
-
 
 @dataclass
 class DualPathRetrieverConfig:
@@ -116,7 +111,6 @@ class DualPathRetrieverConfig:
         if self.top_k_final <= 0:
             raise ValueError(f"top_k_final必须大于0: {self.top_k_final}")
 
-
 @dataclass
 class TemporalQueryOptions:
     """时序查询选项。"""
@@ -128,7 +122,6 @@ class TemporalQueryOptions:
     allow_created_fallback: bool = True
     candidate_multiplier: int = 8
     max_scan: int = 1000
-
 
 @dataclass
 class FusionConfig:
@@ -154,7 +147,6 @@ class FusionConfig:
         elif abs(s - 1.0) > 1e-8:
             self.vector_weight /= s
             self.bm25_weight /= s
-
 
 class DualPathRetriever:
     """
