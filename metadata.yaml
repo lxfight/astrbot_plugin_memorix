@@ -1,0 +1,12 @@
+name: astrbot_plugin_memorix
+display_name: Memorix
+desc: 基于 A_memorix 的 AstrBot 记忆插件，含内嵌 WebUI。
+version: v0.1.0
+author: Codex
+repo: https://example.com/astrbot_plugin_memorix
+support_platforms:
+  - aiocqhttp
+  - qq_official
+  - telegram
+  - discord
+astrbot_version: ">=4.16,<5"

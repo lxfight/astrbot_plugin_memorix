@@ -1,0 +1,438 @@
+from __future__ import annotations
+
+import shlex
+from typing import Any, Dict
+
+from astrbot.api import AstrBotConfig, logger
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.star import Context, Star, register
+
+from .memorix.adapters.astrbot_event_adapter import AstrbotEventAdapter
+from .memorix.app_context import ScopeRuntimeManager
+from .memorix.commands.mem_commands import to_pretty_text
+from .memorix.scope_router import ScopeRouter
+from .memorix.services import IngestService, MemoryService, ProfileService, QueryService, SummaryService
+from .memorix.tasks.maintenance_scheduler import MaintenanceScheduler
+from .memorix.webui import EmbeddedWebUIServer
+
+
+@register("astrbot_plugin_memorix", "Codex", "A_memorix memory plugin with embedded WebUI", "0.1.0")
+class MemorixPlugin(Star):
+    def __init__(self, context: Context, config: AstrBotConfig):
+        super().__init__(context)
+        self.config = dict(config or {})
+        self.scope_router = ScopeRouter(mode=str(self.config.get("scope", {}).get("mode", "platform_global")))
+        self.runtime_manager = ScopeRuntimeManager(plugin_name="astrbot_plugin_memorix", plugin_config=self.config)
+
+        self.ingest_service = IngestService(self.runtime_manager, self.config)
+        self.query_service = QueryService(self.runtime_manager)
+        self.memory_service = MemoryService(self.runtime_manager)
+        self.profile_service = ProfileService(self.runtime_manager)
+        self.summary_service = SummaryService(self.runtime_manager)
+        self.maintenance_scheduler = MaintenanceScheduler(runtime_manager=self.runtime_manager)
+        self.webui_server = EmbeddedWebUIServer(self.runtime_manager, self.config)
+
+    async def initialize(self):
+        if bool(self.config.get("webui", {}).get("enabled", True)):
+            try:
+                ui_scope = str(self.config.get("webui", {}).get("scope", "aiocqhttp") or "aiocqhttp")
+                state = await self.webui_server.start(scope_key=ui_scope)
+                if state.url:
+                    logger.info("[memorix] WebUI started at %s (scope=%s)", state.url, state.scope_key)
+            except Exception as exc:
+                logger.error("[memorix] WebUI start failed: %s", exc)
+
+    async def terminate(self):
+        try:
+            self.webui_server.stop()
+        except Exception:
+            pass
+        await self.runtime_manager.close_all()
+
+    def _resolve_scope(self, event: AstrMessageEvent) -> str:
+        return self.scope_router.resolve(event)
+
+    @staticmethod
+    def _bool_cfg(config: Dict[str, Any], key: str, default: bool) -> bool:
+        current: Any = config
+        for part in key.split("."):
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return default
+        return bool(current)
+
+    @staticmethod
+    def _parse_tail(raw_text: str, sub_cmd: str) -> str:
+        text = str(raw_text or "").strip()
+        if text.startswith("/"):
+            text = text[1:]
+        for prefix in ("mem", "astrbot_plugin_memorix"):
+            if text.startswith(prefix):
+                text = text[len(prefix) :].strip()
+                break
+        if text.startswith(sub_cmd):
+            text = text[len(sub_cmd) :].strip()
+        return text
+
+    @classmethod
+    def _parse_tail_tokens(cls, raw_text: str, sub_cmd: str) -> list[str]:
+        tail = cls._parse_tail(raw_text, sub_cmd)
+        if not tail:
+            return []
+        try:
+            return [str(token).strip() for token in shlex.split(tail) if str(token).strip()]
+        except ValueError:
+            return [token for token in tail.split() if token]
+
+    @staticmethod
+    def _to_int(raw: Any, default: int, min_value: int = 1) -> int:
+        try:
+            return max(int(raw), min_value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _to_float(raw: Any, default: float, min_value: float = 0.0) -> float:
+        try:
+            return max(float(raw), min_value)
+        except (TypeError, ValueError):
+            return default
+
+    async def _ingest_event_message(self, event: AstrMessageEvent, role: str, text: str) -> None:
+        adapted = AstrbotEventAdapter.from_event(event, self._resolve_scope(event))
+        self_id = str(getattr(getattr(event, "message_obj", None), "self_id", "") or "")
+        if role == "user" and adapted.sender_id and self_id and adapted.sender_id == self_id:
+            return
+
+        source = f"chat:{adapted.platform}:{adapted.session_id}"
+        await self.profile_service.upsert_registry_from_event(
+            scope_key=adapted.scope_key,
+            platform=adapted.platform,
+            sender_id=adapted.sender_id,
+            sender_name=adapted.sender_name or adapted.sender_id,
+        )
+        await self.ingest_service.ingest_message(
+            scope_key=adapted.scope_key,
+            session_id=adapted.session_id,
+            role=role,
+            content=text,
+            source=source,
+            time_meta={"event_time": adapted.timestamp} if adapted.timestamp else None,
+        )
+
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def on_all_messages(self, event: AstrMessageEvent):
+        if not self._bool_cfg(self.config, "ingest.record_all_events", True):
+            return
+        text = str(getattr(event, "message_str", "") or "").strip()
+        if not text and self._bool_cfg(self.config, "ingest.skip_empty_text", True):
+            return
+        try:
+            await self._ingest_event_message(event, "user", text)
+        except Exception as exc:
+            logger.warning("[memorix] ingest user message failed: %s", exc)
+
+    @filter.on_llm_request()
+    async def on_llm_request(self, event: AstrMessageEvent, req):
+        scope_key = self._resolve_scope(event)
+        query = str(getattr(event, "message_str", "") or "").strip()
+        if not query:
+            return
+        try:
+            search_result = await self.query_service.search(scope_key=scope_key, query=query, top_k=6)
+            lines = []
+            for item in (search_result.get("results") or [])[:6]:
+                content = str(item.get("content", "")).strip()
+                if content:
+                    lines.append(f"- {content}")
+
+            profile_hint = await self.profile_service.query(
+                scope_key=scope_key,
+                person_keyword=str(getattr(event, "get_sender_id", lambda: "")() or ""),
+                top_k=6,
+                force_refresh=False,
+            )
+            profile_text = str(profile_hint.get("profile_text", "")).strip() if isinstance(profile_hint, dict) else ""
+
+            block_parts = []
+            if lines:
+                block_parts.append("【历史记忆片段】\n" + "\n".join(lines))
+            if profile_text:
+                block_parts.append("【人物画像-内部参考】\n" + profile_text)
+            if not block_parts:
+                return
+
+            injected = "\n\n".join(block_parts)
+            current_sp = str(getattr(req, "system_prompt", "") or "")
+            setattr(req, "system_prompt", f"{current_sp}\n\n{injected}" if current_sp else injected)
+        except Exception as exc:
+            logger.warning("[memorix] llm request hook failed: %s", exc)
+
+    @filter.on_llm_response()
+    async def on_llm_response(self, event: AstrMessageEvent, resp):
+        text = str(getattr(resp, "completion_text", "") or "").strip()
+        if not text:
+            return
+        try:
+            await self._ingest_event_message(event, "assistant", text)
+        except Exception as exc:
+            logger.warning("[memorix] ingest llm response failed: %s", exc)
+
+    @filter.command_group("mem")
+    def mem(self):
+        pass
+
+    @mem.command("status")
+    async def mem_status(self, event: AstrMessageEvent):
+        scope_key = self._resolve_scope(event)
+        data = await self.memory_service.status(scope_key=scope_key)
+        scheduler = await self.maintenance_scheduler.status(scope_key=scope_key)
+        payload = {
+            "scope": scope_key,
+            "known_scopes": self.runtime_manager.get_known_scopes(),
+            "webui": {
+                "url": self.webui_server.state.url,
+                "scope": self.webui_server.state.scope_key,
+            },
+            "scheduler": scheduler,
+            "memory": data,
+        }
+        yield event.plain_result(to_pretty_text(payload))
+
+    @mem.command("query")
+    async def mem_query(self, event: AstrMessageEvent, query: str = "", top_k: int = 10):
+        resolved_top_k = self._to_int(top_k, 10)
+        q = str(query or "").strip()
+        tokens = self._parse_tail_tokens(event.message_str, "query")
+        if tokens:
+            if len(tokens) > 1:
+                maybe_k = self._to_int(tokens[-1], -1, min_value=1)
+                if maybe_k > 0:
+                    resolved_top_k = maybe_k
+                    tokens = tokens[:-1]
+            parsed_query = " ".join(tokens).strip()
+            if parsed_query:
+                q = parsed_query
+        if not q:
+            yield event.plain_result("用法: /mem query <关键词> [top_k]")
+            return
+        scope_key = self._resolve_scope(event)
+        try:
+            data = await self.query_service.search(scope_key=scope_key, query=q, top_k=resolved_top_k)
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem query failed: %s", exc)
+            yield event.plain_result(f"查询失败: {exc}")
+
+    @mem.command("time")
+    async def mem_time(
+        self,
+        event: AstrMessageEvent,
+        time_from: str = "",
+        time_to: str = "",
+        query: str = "",
+        top_k: int = 10,
+    ):
+        from_text = str(time_from or "").strip()
+        to_text = str(time_to or "").strip()
+        query_text = str(query or "").strip()
+        resolved_top_k = self._to_int(top_k, 10)
+
+        tokens = self._parse_tail_tokens(event.message_str, "time")
+        if tokens:
+            from_text = str(tokens[0]).strip() or from_text
+            if len(tokens) >= 2:
+                to_text = str(tokens[1]).strip()
+            if len(tokens) >= 3:
+                query_text = " ".join(tokens[2:]).strip()
+
+        if not from_text:
+            yield event.plain_result("用法: /mem time <time_from> [time_to] [query]")
+            return
+
+        scope_key = self._resolve_scope(event)
+        try:
+            data = await self.query_service.time_search(
+                scope_key=scope_key,
+                query=query_text,
+                time_from=from_text or None,
+                time_to=to_text or None,
+                top_k=resolved_top_k,
+            )
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem time failed: %s", exc)
+            yield event.plain_result(f"时序查询失败: {exc}")
+
+    @mem.command("protect")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def mem_protect(self, event: AstrMessageEvent, query_or_hash: str = "", hours: float = 24.0):
+        target = str(query_or_hash or "").strip()
+        resolved_hours = self._to_float(hours, 24.0, min_value=0.1)
+        tokens = self._parse_tail_tokens(event.message_str, "protect")
+        if tokens:
+            maybe_hours = self._to_float(tokens[-1], -1.0, min_value=0.1)
+            if len(tokens) > 1 and maybe_hours > 0:
+                resolved_hours = maybe_hours
+                tokens = tokens[:-1]
+            parsed_target = " ".join(tokens).strip()
+            if parsed_target:
+                target = parsed_target
+        if not target:
+            yield event.plain_result("用法: /mem protect <hash_or_query> [hours]")
+            return
+        scope_key = self._resolve_scope(event)
+        try:
+            data = await self.memory_service.protect(scope_key=scope_key, query_or_hash=target, hours=resolved_hours)
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem protect failed: %s", exc)
+            yield event.plain_result(f"保护失败: {exc}")
+
+    @mem.command("reinforce")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def mem_reinforce(self, event: AstrMessageEvent, query_or_hash: str = ""):
+        target = str(query_or_hash or "").strip()
+        parsed_target = self._parse_tail(event.message_str, "reinforce")
+        if parsed_target:
+            target = parsed_target
+        if not target:
+            yield event.plain_result("用法: /mem reinforce <hash_or_query>")
+            return
+        scope_key = self._resolve_scope(event)
+        try:
+            data = await self.memory_service.reinforce(scope_key=scope_key, query_or_hash=target)
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem reinforce failed: %s", exc)
+            yield event.plain_result(f"强化失败: {exc}")
+
+    @mem.command("restore")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def mem_restore(self, event: AstrMessageEvent, hash_value: str = "", restore_type: str = "relation"):
+        target = str(hash_value or "").strip()
+        rtype = str(restore_type or "relation").strip() or "relation"
+        tokens = self._parse_tail_tokens(event.message_str, "restore")
+        if tokens:
+            target = str(tokens[0]).strip() or target
+            if len(tokens) > 1:
+                rtype = str(tokens[1]).strip() or rtype
+        if not target:
+            yield event.plain_result("用法: /mem restore <hash> [relation|entity]")
+            return
+        scope_key = self._resolve_scope(event)
+        try:
+            data = await self.memory_service.restore(scope_key=scope_key, hash_value=target, restore_type=rtype)
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem restore failed: %s", exc)
+            yield event.plain_result(f"恢复失败: {exc}")
+
+    @mem.command("profile")
+    async def mem_profile(self, event: AstrMessageEvent, person_keyword_or_id: str = "", top_k: int = 12):
+        scope_key = self._resolve_scope(event)
+        keyword = str(person_keyword_or_id or "").strip()
+        resolved_top_k = self._to_int(top_k, 12)
+        tokens = self._parse_tail_tokens(event.message_str, "profile")
+        if tokens:
+            if len(tokens) > 1:
+                maybe_k = self._to_int(tokens[-1], -1, min_value=1)
+                if maybe_k > 0:
+                    resolved_top_k = maybe_k
+                    tokens = tokens[:-1]
+            parsed_keyword = " ".join(tokens).strip()
+            if parsed_keyword:
+                keyword = parsed_keyword
+        if not keyword:
+            keyword = str(getattr(event, "get_sender_id", lambda: "")() or "")
+        try:
+            data = await self.profile_service.query(
+                scope_key=scope_key,
+                person_keyword=keyword,
+                top_k=resolved_top_k,
+                force_refresh=False,
+            )
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem profile failed: %s", exc)
+            yield event.plain_result(f"画像查询失败: {exc}")
+
+    @mem.command("profile_override")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def mem_profile_override(self, event: AstrMessageEvent, person_id: str = "", override_text: str = ""):
+        pid = str(person_id or "").strip()
+        text = str(override_text or "").strip()
+        tail = self._parse_tail(event.message_str, "profile_override")
+        if tail:
+            parts = tail.split(maxsplit=1)
+            if len(parts) == 2:
+                pid = str(parts[0]).strip() or pid
+                text = str(parts[1]).strip() or text
+        if not pid or not text:
+            yield event.plain_result("用法: /mem profile_override <person_id> <text>")
+            return
+        scope_key = self._resolve_scope(event)
+        try:
+            data = await self.profile_service.set_override(scope_key=scope_key, person_id=pid, override_text=text)
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem profile_override failed: %s", exc)
+            yield event.plain_result(f"画像覆盖失败: {exc}")
+
+    @mem.command("profile_clear")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def mem_profile_clear(self, event: AstrMessageEvent, person_id: str = ""):
+        pid = str(person_id or "").strip()
+        parsed_pid = self._parse_tail(event.message_str, "profile_clear")
+        if parsed_pid:
+            pid = parsed_pid
+        if not pid:
+            yield event.plain_result("用法: /mem profile_clear <person_id>")
+            return
+        scope_key = self._resolve_scope(event)
+        try:
+            data = await self.profile_service.delete_override(scope_key=scope_key, person_id=pid)
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem profile_clear failed: %s", exc)
+            yield event.plain_result(f"画像覆盖清除失败: {exc}")
+
+    @mem.command("summary_now")
+    async def mem_summary_now(self, event: AstrMessageEvent, context_length: int = 50):
+        resolved_context_length = self._to_int(context_length, 50)
+        tokens = self._parse_tail_tokens(event.message_str, "summary_now")
+        if tokens:
+            parsed = self._to_int(tokens[0], -1)
+            if parsed > 0:
+                resolved_context_length = parsed
+        scope_key = self._resolve_scope(event)
+        adapted = AstrbotEventAdapter.from_event(event, scope_key)
+        try:
+            data = await self.summary_service.summarize_session(
+                scope_key=scope_key,
+                session_id=adapted.session_id,
+                source=f"summary:{adapted.platform}:{adapted.session_id}",
+                context_length=resolved_context_length,
+            )
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem summary_now failed: %s", exc)
+            yield event.plain_result(f"总结失败: {exc}")
+
+    @mem.command("ui")
+    async def mem_ui(self, event: AstrMessageEvent):
+        if not bool(self.config.get("webui", {}).get("enabled", True)):
+            yield event.plain_result("WebUI 已禁用")
+            return
+        try:
+            if not self.webui_server.state.url:
+                ui_scope = str(self.config.get("webui", {}).get("scope", "aiocqhttp") or "aiocqhttp")
+                state = await self.webui_server.start(scope_key=ui_scope)
+                if not state.url:
+                    yield event.plain_result("WebUI 启动失败")
+                    return
+            yield event.plain_result(f"Memorix WebUI: {self.webui_server.state.url}")
+        except Exception as exc:
+            logger.error("[memorix] mem ui failed: %s", exc)
+            yield event.plain_result(f"WebUI 启动失败: {exc}")

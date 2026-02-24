@@ -1,0 +1,282 @@
+{
+  "scope": {
+    "type": "object",
+    "description": "记忆作用域策略",
+    "items": {
+      "mode": {
+        "type": "string",
+        "description": "作用域模式",
+        "default": "platform_global",
+        "options": ["platform_global", "user_global", "group_global", "umo"]
+      }
+    }
+  },
+  "ingest": {
+    "type": "object",
+    "description": "写入策略",
+    "items": {
+      "record_all_events": {
+        "type": "bool",
+        "description": "是否记录所有消息事件",
+        "default": true
+      },
+      "skip_empty_text": {
+        "type": "bool",
+        "description": "忽略空文本",
+        "default": true
+      }
+    }
+  },
+  "embedding": {
+    "type": "object",
+    "description": "向量配置",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用远程 embedding",
+        "default": false,
+        "obvious_hint": true
+      },
+      "dimension": {
+        "type": "int",
+        "description": "向量维度",
+        "default": 1024
+      },
+      "batch_size": {
+        "type": "int",
+        "description": "批量大小",
+        "default": 32
+      },
+      "max_concurrent": {
+        "type": "int",
+        "description": "并发请求数",
+        "default": 5
+      },
+      "auto_detect_dimension": {
+        "type": "bool",
+        "description": "自动探测维度",
+        "default": false
+      },
+      "openapi": {
+        "type": "object",
+        "description": "OpenAI-compatible 端点",
+        "items": {
+          "base_url": {
+            "type": "string",
+            "description": "API Base URL",
+            "default": ""
+          },
+          "api_key": {
+            "type": "string",
+            "description": "API Key",
+            "default": "",
+            "obvious_hint": true
+          },
+          "model": {
+            "type": "string",
+            "description": "Embedding 模型",
+            "default": "text-embedding-3-large"
+          },
+          "chat_model": {
+            "type": "string",
+            "description": "Summary/Profile 模型",
+            "default": ""
+          },
+          "timeout_seconds": {
+            "type": "int",
+            "description": "请求超时",
+            "default": 30
+          },
+          "max_retries": {
+            "type": "int",
+            "description": "最大重试次数",
+            "default": 3
+          }
+        }
+      }
+    }
+  },
+  "retrieval": {
+    "type": "object",
+    "description": "检索配置",
+    "items": {
+      "top_k_final": {
+        "type": "int",
+        "description": "默认返回数量",
+        "default": 10
+      },
+      "enable_ppr": {
+        "type": "bool",
+        "description": "启用 PageRank 重排",
+        "default": true
+      },
+      "enable_parallel": {
+        "type": "bool",
+        "description": "并行检索",
+        "default": true
+      },
+      "temporal": {
+        "type": "object",
+        "description": "时序检索",
+        "items": {
+          "enabled": {
+            "type": "bool",
+            "description": "启用时序检索",
+            "default": true
+          },
+          "default_top_k": {
+            "type": "int",
+            "description": "时序默认 top_k",
+            "default": 10
+          }
+        }
+      }
+    }
+  },
+  "memory": {
+    "type": "object",
+    "description": "记忆维护配置",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用记忆维护",
+        "default": true
+      },
+      "half_life_hours": {
+        "type": "float",
+        "description": "半衰期小时",
+        "default": 24.0
+      },
+      "base_decay_interval_hours": {
+        "type": "float",
+        "description": "衰减周期小时",
+        "default": 1.0
+      },
+      "prune_threshold": {
+        "type": "float",
+        "description": "剪枝阈值",
+        "default": 0.1
+      },
+      "freeze_duration_hours": {
+        "type": "float",
+        "description": "冻结保留时长",
+        "default": 24.0
+      },
+      "max_weight": {
+        "type": "float",
+        "description": "边最大权重",
+        "default": 10.0
+      },
+      "auto_protect_ttl_hours": {
+        "type": "float",
+        "description": "强化自动保护时长",
+        "default": 24.0
+      }
+    }
+  },
+  "person_profile": {
+    "type": "object",
+    "description": "人物画像配置",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用人物画像",
+        "default": true
+      },
+      "profile_ttl_minutes": {
+        "type": "int",
+        "description": "画像缓存 TTL（分钟）",
+        "default": 360
+      },
+      "top_k_evidence": {
+        "type": "int",
+        "description": "画像证据数量",
+        "default": 12
+      }
+    }
+  },
+  "summarization": {
+    "type": "object",
+    "description": "总结配置",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用总结导入",
+        "default": true
+      },
+      "model_name": {
+        "type": "string",
+        "description": "总结模型（auto 使用 embedding.chat_model）",
+        "default": "auto"
+      },
+      "context_length": {
+        "type": "int",
+        "description": "总结上下文长度",
+        "default": 50
+      },
+      "default_knowledge_type": {
+        "type": "string",
+        "description": "总结写入知识类型",
+        "default": "narrative",
+        "options": ["narrative", "factual", "mixed", "structured", "auto"]
+      }
+    }
+  },
+  "webui": {
+    "type": "object",
+    "description": "内嵌 WebUI",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用 WebUI",
+        "default": true
+      },
+      "host": {
+        "type": "string",
+        "description": "监听地址",
+        "default": "0.0.0.0"
+      },
+      "port": {
+        "type": "int",
+        "description": "监听端口",
+        "default": 8092
+      },
+      "port_fallback_max_tries": {
+        "type": "int",
+        "description": "端口冲突回退尝试次数",
+        "default": 20
+      },
+      "scope": {
+        "type": "string",
+        "description": "WebUI 绑定作用域（默认 aiocqhttp）",
+        "default": "aiocqhttp"
+      },
+      "auth": {
+        "type": "object",
+        "description": "WebUI 鉴权",
+        "items": {
+          "enabled": {
+            "type": "bool",
+            "description": "启用 Bearer 鉴权",
+            "default": false
+          },
+          "write_tokens": {
+            "type": "list",
+            "description": "写接口 token 列表",
+            "default": []
+          },
+          "read_tokens": {
+            "type": "list",
+            "description": "读接口 token 列表",
+            "default": []
+          },
+          "protect_read_endpoints": {
+            "type": "bool",
+            "description": "读接口也要求鉴权",
+            "default": false
+          }
+        }
+      }
+    }
+  }
+}
