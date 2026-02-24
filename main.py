@@ -71,14 +71,30 @@ class MemorixPlugin(Star):
     def _parse_tail(raw_text: str, sub_cmd: str) -> str:
         text = str(raw_text or "").strip()
         if text.startswith("/"):
-            text = text[1:]
+            text = text[1:].lstrip()
         for prefix in ("mem", "astrbot_plugin_memorix"):
-            if text.startswith(prefix):
-                text = text[len(prefix) :].strip()
+            matched, text = MemorixPlugin._consume_head_token(text, prefix)
+            if matched:
                 break
-        if text.startswith(sub_cmd):
-            text = text[len(sub_cmd) :].strip()
+        matched, text = MemorixPlugin._consume_head_token(text, sub_cmd)
+        if matched:
+            return text
         return text
+
+    @staticmethod
+    def _consume_head_token(text: str, token: str) -> tuple[bool, str]:
+        raw = str(text or "").strip()
+        name = str(token or "").strip()
+        if not raw or not name:
+            return False, raw
+        if raw == name:
+            return True, ""
+        if not raw.startswith(name):
+            return False, raw
+        next_char = raw[len(name) : len(name) + 1]
+        if next_char and not next_char.isspace():
+            return False, raw
+        return True, raw[len(name) :].strip()
 
     @classmethod
     def _parse_tail_tokens(cls, raw_text: str, sub_cmd: str) -> list[str]:
