@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import shlex
-from typing import Any, Dict
+import time
+from typing import Any, Dict, Optional
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
@@ -33,6 +34,7 @@ class MemorixPlugin(Star):
         self.webui_server = EmbeddedWebUIServer(self.runtime_manager, self.config)
 
     async def initialize(self):
+        logger.info("[memorix] initialize start")
         if bool(self.config.get("webui", {}).get("enabled", True)):
             try:
                 ui_scope = str(self.config.get("webui", {}).get("scope", "aiocqhttp") or "aiocqhttp")
@@ -40,14 +42,17 @@ class MemorixPlugin(Star):
                 if state.url:
                     logger.info("[memorix] WebUI started at %s (scope=%s)", state.url, state.scope_key)
             except Exception as exc:
-                logger.error("[memorix] WebUI start failed: %s", exc)
+                logger.error("[memorix] WebUI start failed: %s", exc, exc_info=True)
+        logger.info("[memorix] initialize done")
 
     async def terminate(self):
+        logger.info("[memorix] terminate start")
         try:
             self.webui_server.stop()
         except Exception:
             pass
         await self.runtime_manager.close_all()
+        logger.info("[memorix] terminate done")
 
     def _resolve_scope(self, event: AstrMessageEvent) -> str:
         return self.scope_router.resolve(event)
@@ -99,10 +104,37 @@ class MemorixPlugin(Star):
         except (TypeError, ValueError):
             return default
 
+    @staticmethod
+    def _event_ctx_text(event: AstrMessageEvent, scope_key: Optional[str] = None) -> str:
+        scope = str(scope_key or "").strip() or "unknown"
+        platform = str(getattr(event, "get_platform_name", lambda: "unknown")() or "unknown")
+        sender = str(getattr(event, "get_sender_id", lambda: "")() or "")
+        group = str(getattr(event, "get_group_id", lambda: "")() or "")
+        message_obj = getattr(event, "message_obj", None)
+        session = str(getattr(message_obj, "session_id", "") or getattr(event, "unified_msg_origin", ""))
+        return (
+            f"scope={scope} platform={platform} "
+            f"session={session or '-'} sender={sender or '-'} group={group or '-'}"
+        )
+
+    def _log_cmd(self, event: AstrMessageEvent, command: str, **fields: Any) -> None:
+        scope_key = self._resolve_scope(event)
+        ctx = self._event_ctx_text(event, scope_key)
+        detail = " ".join(f"{key}={value}" for key, value in fields.items())
+        if detail:
+            logger.info("[memorix] cmd=%s %s %s", command, ctx, detail)
+        else:
+            logger.info("[memorix] cmd=%s %s", command, ctx)
+
     async def _ingest_event_message(self, event: AstrMessageEvent, role: str, text: str) -> None:
         adapted = AstrbotEventAdapter.from_event(event, self._resolve_scope(event))
         self_id = str(getattr(getattr(event, "message_obj", None), "self_id", "") or "")
         if role == "user" and adapted.sender_id and self_id and adapted.sender_id == self_id:
+            logger.debug(
+                "[memorix] skip self message role=%s %s",
+                role,
+                self._event_ctx_text(event, adapted.scope_key),
+            )
             return
 
         source = f"chat:{adapted.platform}:{adapted.session_id}"
@@ -120,18 +152,31 @@ class MemorixPlugin(Star):
             source=source,
             time_meta={"event_time": adapted.timestamp} if adapted.timestamp else None,
         )
+        logger.debug(
+            "[memorix] ingested role=%s chars=%s %s",
+            role,
+            len(text),
+            self._event_ctx_text(event, adapted.scope_key),
+        )
 
     @filter.event_message_type(filter.EventMessageType.ALL)
     async def on_all_messages(self, event: AstrMessageEvent):
         if not self._bool_cfg(self.config, "ingest.record_all_events", True):
+            logger.debug("[memorix] ingest disabled by config")
             return
         text = str(getattr(event, "message_str", "") or "").strip()
         if not text and self._bool_cfg(self.config, "ingest.skip_empty_text", True):
+            logger.debug("[memorix] skip empty message %s", self._event_ctx_text(event))
             return
         try:
             await self._ingest_event_message(event, "user", text)
         except Exception as exc:
-            logger.warning("[memorix] ingest user message failed: %s", exc)
+            logger.warning(
+                "[memorix] ingest user message failed: %s (%s)",
+                exc,
+                self._event_ctx_text(event),
+                exc_info=True,
+            )
 
     @filter.on_llm_request()
     async def on_llm_request(self, event: AstrMessageEvent, req):
@@ -139,6 +184,7 @@ class MemorixPlugin(Star):
         query = str(getattr(event, "message_str", "") or "").strip()
         if not query:
             return
+        start = time.perf_counter()
         try:
             search_result = await self.query_service.search(scope_key=scope_key, query=query, top_k=6)
             lines = []
@@ -161,13 +207,26 @@ class MemorixPlugin(Star):
             if profile_text:
                 block_parts.append("【人物画像-内部参考】\n" + profile_text)
             if not block_parts:
+                logger.debug("[memorix] llm request no memory injection %s", self._event_ctx_text(event, scope_key))
                 return
 
             injected = "\n\n".join(block_parts)
             current_sp = str(getattr(req, "system_prompt", "") or "")
             setattr(req, "system_prompt", f"{current_sp}\n\n{injected}" if current_sp else injected)
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            logger.debug(
+                "[memorix] llm request injected blocks=%s elapsed_ms=%s %s",
+                len(block_parts),
+                elapsed_ms,
+                self._event_ctx_text(event, scope_key),
+            )
         except Exception as exc:
-            logger.warning("[memorix] llm request hook failed: %s", exc)
+            logger.warning(
+                "[memorix] llm request hook failed: %s (%s)",
+                exc,
+                self._event_ctx_text(event, scope_key),
+                exc_info=True,
+            )
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, resp):
@@ -177,7 +236,12 @@ class MemorixPlugin(Star):
         try:
             await self._ingest_event_message(event, "assistant", text)
         except Exception as exc:
-            logger.warning("[memorix] ingest llm response failed: %s", exc)
+            logger.warning(
+                "[memorix] ingest llm response failed: %s (%s)",
+                exc,
+                self._event_ctx_text(event),
+                exc_info=True,
+            )
 
     @filter.command_group("mem")
     def mem(self):
@@ -185,6 +249,7 @@ class MemorixPlugin(Star):
 
     @mem.command("status")
     async def mem_status(self, event: AstrMessageEvent):
+        self._log_cmd(event, "status")
         scope_key = self._resolve_scope(event)
         data = await self.memory_service.status(scope_key=scope_key)
         scheduler = await self.maintenance_scheduler.status(scope_key=scope_key)
@@ -217,12 +282,13 @@ class MemorixPlugin(Star):
         if not q:
             yield event.plain_result("用法: /mem query <关键词> [top_k]")
             return
+        self._log_cmd(event, "query", top_k=resolved_top_k, q_len=len(q))
         scope_key = self._resolve_scope(event)
         try:
             data = await self.query_service.search(scope_key=scope_key, query=q, top_k=resolved_top_k)
             yield event.plain_result(to_pretty_text(data))
         except Exception as exc:
-            logger.error("[memorix] mem query failed: %s", exc)
+            logger.error("[memorix] mem query failed: %s", exc, exc_info=True)
             yield event.plain_result(f"查询失败: {exc}")
 
     @mem.command("time")
@@ -251,6 +317,14 @@ class MemorixPlugin(Star):
             yield event.plain_result("用法: /mem time <time_from> [time_to] [query]")
             return
 
+        self._log_cmd(
+            event,
+            "time",
+            time_from=from_text,
+            has_time_to=bool(to_text),
+            top_k=resolved_top_k,
+            q_len=len(query_text),
+        )
         scope_key = self._resolve_scope(event)
         try:
             data = await self.query_service.time_search(
@@ -262,7 +336,7 @@ class MemorixPlugin(Star):
             )
             yield event.plain_result(to_pretty_text(data))
         except Exception as exc:
-            logger.error("[memorix] mem time failed: %s", exc)
+            logger.error("[memorix] mem time failed: %s", exc, exc_info=True)
             yield event.plain_result(f"时序查询失败: {exc}")
 
     @mem.command("protect")
@@ -282,12 +356,13 @@ class MemorixPlugin(Star):
         if not target:
             yield event.plain_result("用法: /mem protect <hash_or_query> [hours]")
             return
+        self._log_cmd(event, "protect", hours=resolved_hours, target_len=len(target))
         scope_key = self._resolve_scope(event)
         try:
             data = await self.memory_service.protect(scope_key=scope_key, query_or_hash=target, hours=resolved_hours)
             yield event.plain_result(to_pretty_text(data))
         except Exception as exc:
-            logger.error("[memorix] mem protect failed: %s", exc)
+            logger.error("[memorix] mem protect failed: %s", exc, exc_info=True)
             yield event.plain_result(f"保护失败: {exc}")
 
     @mem.command("reinforce")
@@ -300,12 +375,13 @@ class MemorixPlugin(Star):
         if not target:
             yield event.plain_result("用法: /mem reinforce <hash_or_query>")
             return
+        self._log_cmd(event, "reinforce", target_len=len(target))
         scope_key = self._resolve_scope(event)
         try:
             data = await self.memory_service.reinforce(scope_key=scope_key, query_or_hash=target)
             yield event.plain_result(to_pretty_text(data))
         except Exception as exc:
-            logger.error("[memorix] mem reinforce failed: %s", exc)
+            logger.error("[memorix] mem reinforce failed: %s", exc, exc_info=True)
             yield event.plain_result(f"强化失败: {exc}")
 
     @mem.command("restore")
@@ -321,12 +397,13 @@ class MemorixPlugin(Star):
         if not target:
             yield event.plain_result("用法: /mem restore <hash> [relation|entity]")
             return
+        self._log_cmd(event, "restore", restore_type=rtype, hash=target)
         scope_key = self._resolve_scope(event)
         try:
             data = await self.memory_service.restore(scope_key=scope_key, hash_value=target, restore_type=rtype)
             yield event.plain_result(to_pretty_text(data))
         except Exception as exc:
-            logger.error("[memorix] mem restore failed: %s", exc)
+            logger.error("[memorix] mem restore failed: %s", exc, exc_info=True)
             yield event.plain_result(f"恢复失败: {exc}")
 
     @mem.command("profile")
@@ -346,6 +423,7 @@ class MemorixPlugin(Star):
                 keyword = parsed_keyword
         if not keyword:
             keyword = str(getattr(event, "get_sender_id", lambda: "")() or "")
+        self._log_cmd(event, "profile", top_k=resolved_top_k, keyword_len=len(keyword))
         try:
             data = await self.profile_service.query(
                 scope_key=scope_key,
@@ -355,7 +433,7 @@ class MemorixPlugin(Star):
             )
             yield event.plain_result(to_pretty_text(data))
         except Exception as exc:
-            logger.error("[memorix] mem profile failed: %s", exc)
+            logger.error("[memorix] mem profile failed: %s", exc, exc_info=True)
             yield event.plain_result(f"画像查询失败: {exc}")
 
     @mem.command("profile_override")
@@ -372,12 +450,13 @@ class MemorixPlugin(Star):
         if not pid or not text:
             yield event.plain_result("用法: /mem profile_override <person_id> <text>")
             return
+        self._log_cmd(event, "profile_override", person_id=pid, text_len=len(text))
         scope_key = self._resolve_scope(event)
         try:
             data = await self.profile_service.set_override(scope_key=scope_key, person_id=pid, override_text=text)
             yield event.plain_result(to_pretty_text(data))
         except Exception as exc:
-            logger.error("[memorix] mem profile_override failed: %s", exc)
+            logger.error("[memorix] mem profile_override failed: %s", exc, exc_info=True)
             yield event.plain_result(f"画像覆盖失败: {exc}")
 
     @mem.command("profile_clear")
@@ -390,12 +469,13 @@ class MemorixPlugin(Star):
         if not pid:
             yield event.plain_result("用法: /mem profile_clear <person_id>")
             return
+        self._log_cmd(event, "profile_clear", person_id=pid)
         scope_key = self._resolve_scope(event)
         try:
             data = await self.profile_service.delete_override(scope_key=scope_key, person_id=pid)
             yield event.plain_result(to_pretty_text(data))
         except Exception as exc:
-            logger.error("[memorix] mem profile_clear failed: %s", exc)
+            logger.error("[memorix] mem profile_clear failed: %s", exc, exc_info=True)
             yield event.plain_result(f"画像覆盖清除失败: {exc}")
 
     @mem.command("summary_now")
@@ -406,6 +486,7 @@ class MemorixPlugin(Star):
             parsed = self._to_int(tokens[0], -1)
             if parsed > 0:
                 resolved_context_length = parsed
+        self._log_cmd(event, "summary_now", context_length=resolved_context_length)
         scope_key = self._resolve_scope(event)
         adapted = AstrbotEventAdapter.from_event(event, scope_key)
         try:
@@ -417,7 +498,7 @@ class MemorixPlugin(Star):
             )
             yield event.plain_result(to_pretty_text(data))
         except Exception as exc:
-            logger.error("[memorix] mem summary_now failed: %s", exc)
+            logger.error("[memorix] mem summary_now failed: %s", exc, exc_info=True)
             yield event.plain_result(f"总结失败: {exc}")
 
     @mem.command("ui")
@@ -425,6 +506,7 @@ class MemorixPlugin(Star):
         if not bool(self.config.get("webui", {}).get("enabled", True)):
             yield event.plain_result("WebUI 已禁用")
             return
+        self._log_cmd(event, "ui")
         try:
             if not self.webui_server.state.url:
                 ui_scope = str(self.config.get("webui", {}).get("scope", "aiocqhttp") or "aiocqhttp")
@@ -434,5 +516,5 @@ class MemorixPlugin(Star):
                     return
             yield event.plain_result(f"Memorix WebUI: {self.webui_server.state.url}")
         except Exception as exc:
-            logger.error("[memorix] mem ui failed: %s", exc)
+            logger.error("[memorix] mem ui failed: %s", exc, exc_info=True)
             yield event.plain_result(f"WebUI 启动失败: {exc}")

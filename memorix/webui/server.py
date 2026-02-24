@@ -7,8 +7,11 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from ..amemorix.auth import BearerAuthMiddleware
+from ..amemorix.common.logging import get_logger
 from ..app_context import ScopeRuntimeManager
 from .routes_compat import MemorixServer
+
+logger = get_logger("A_Memorix.EmbeddedWebUI")
 
 
 @dataclass(slots=True)
@@ -49,15 +52,24 @@ class EmbeddedWebUIServer:
         for idx in range(max(1, int(tries))):
             candidate = int(start_port) + idx
             if self._is_port_available(host, candidate):
+                if idx > 0:
+                    logger.warning(
+                        "webui default port busy, fallback selected: host=%s from=%s to=%s",
+                        host,
+                        start_port,
+                        candidate,
+                    )
                 return candidate
         raise RuntimeError(f"no available port from {start_port} after {tries} tries")
 
     async def start(self, *, scope_key: str) -> WebUIServerState:
         enabled = bool(self._cfg("webui.enabled", True))
         if not enabled:
+            logger.info("webui disabled by config")
             return self.state
 
         if self._server is not None:
+            logger.info("webui already running: url=%s scope=%s", self.state.url, self.state.scope_key)
             return self.state
 
         runtime = await self.runtime_manager.get_runtime(scope_key)
@@ -82,6 +94,12 @@ class EmbeddedWebUIServer:
             port=port,
             url=f"http://{host}:{port}",
         )
+        logger.info(
+            "webui started: url=%s scope=%s auth_enabled=%s",
+            self.state.url,
+            self.state.scope_key,
+            auth_enabled,
+        )
         return self.state
 
     def stop(self) -> None:
@@ -90,6 +108,6 @@ class EmbeddedWebUIServer:
         try:
             self._server.stop()
         finally:
+            logger.info("webui stopped: url=%s scope=%s", self.state.url, self.state.scope_key)
             self._server = None
             self.state = WebUIServerState()
-

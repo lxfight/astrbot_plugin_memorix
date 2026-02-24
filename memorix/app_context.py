@@ -13,8 +13,11 @@ import numpy as np
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
 from .amemorix.bootstrap import build_context
+from .amemorix.common.logging import get_logger
 from .amemorix.settings import DEFAULT_CONFIG, AppSettings
 from .amemorix.task_manager import TaskManager
+
+logger = get_logger("A_Memorix.ScopeRuntime")
 
 
 def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
@@ -82,7 +85,9 @@ class ScopeRuntimeManager:
         base = data_root / "plugin_data" / self.plugin_name / "scopes"
         base.mkdir(parents=True, exist_ok=True)
         safe_scope = str(scope_key or "default").replace("/", "_").replace("\\", "_")
-        return base / safe_scope
+        target = base / safe_scope
+        logger.debug("resolved scope dir: scope=%s dir=%s", safe_scope, target)
+        return target
 
     def _build_scope_config(self, scope_key: str) -> Dict[str, Any]:
         cfg = _deep_merge(DEFAULT_CONFIG, self.plugin_config)
@@ -106,20 +111,24 @@ class ScopeRuntimeManager:
         runtime.context.retriever.embedding_manager = adapter
         if hasattr(runtime.context, "person_profile_service"):
             runtime.context.person_profile_service.embedding_manager = adapter
+        logger.info("local embedding fallback enabled: scope=%s dim=%s", runtime.scope_key, dimension)
 
     async def get_runtime(self, scope_key: str) -> ScopeRuntime:
         key = str(scope_key or "default")
         existing = self._runtimes.get(key)
         if existing is not None:
+            logger.debug("runtime cache hit: scope=%s", key)
             return existing
 
         async with self._lock:
             existing = self._runtimes.get(key)
             if existing is not None:
+                logger.debug("runtime cache hit after lock: scope=%s", key)
                 return existing
 
             cfg = self._build_scope_config(key)
             settings = AppSettings(config=cfg)
+            logger.info("create runtime: scope=%s data_dir=%s", key, settings.data_dir)
             ctx = build_context(settings)
             task_manager = TaskManager(ctx)
             runtime = ScopeRuntime(scope_key=key, settings=settings, context=ctx, task_manager=task_manager)
@@ -130,6 +139,7 @@ class ScopeRuntimeManager:
 
             await task_manager.start()
             self._runtimes[key] = runtime
+            logger.info("runtime ready: scope=%s embedding_enabled=%s", key, embedding_enabled)
             return runtime
 
     def get_known_scopes(self) -> list[str]:
@@ -140,12 +150,14 @@ class ScopeRuntimeManager:
             runtimes = list(self._runtimes.values())
             self._runtimes.clear()
 
+        logger.info("close all runtimes: count=%s", len(runtimes))
         for runtime in runtimes:
             try:
                 await runtime.task_manager.stop()
             except Exception:
-                pass
+                logger.warning("stop task manager failed: scope=%s", runtime.scope_key, exc_info=True)
             try:
                 await runtime.context.close()
             except Exception:
-                pass
+                logger.warning("close context failed: scope=%s", runtime.scope_key, exc_info=True)
+        logger.info("all runtimes closed")
