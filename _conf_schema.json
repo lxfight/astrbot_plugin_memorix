@@ -149,6 +149,32 @@
         "type": "float",
         "description": "强化自动保护时长",
         "default": 24.0
+      },
+      "orphan": {
+        "type": "object",
+        "description": "孤儿节点软删除与回收",
+        "items": {
+          "enable_soft_delete": {
+            "type": "bool",
+            "description": "启用软删除回收流程",
+            "default": true
+          },
+          "entity_retention_days": {
+            "type": "float",
+            "description": "孤儿实体保留天数（超过后可标记删除）",
+            "default": 7.0
+          },
+          "paragraph_retention_days": {
+            "type": "float",
+            "description": "孤儿段落保留天数（超过后可标记删除）",
+            "default": 7.0
+          },
+          "sweep_grace_hours": {
+            "type": "float",
+            "description": "软删除后等待物理清理的宽限小时",
+            "default": 24.0
+          }
+        }
       }
     }
   },
@@ -161,6 +187,16 @@
         "description": "启用人物画像",
         "default": true
       },
+      "opt_in_required": {
+        "type": "bool",
+        "description": "是否要求按会话+用户显式开启画像注入（对应 /person_profile on|off|status）",
+        "default": true
+      },
+      "default_injection_enabled": {
+        "type": "bool",
+        "description": "当未设置画像开关时的默认注入状态",
+        "default": false
+      },
       "profile_ttl_minutes": {
         "type": "int",
         "description": "画像缓存 TTL（分钟）",
@@ -170,6 +206,22 @@
         "type": "int",
         "description": "画像证据数量",
         "default": 12
+      }
+    }
+  },
+  "schedule": {
+    "type": "object",
+    "description": "定时总结导入",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用定时总结任务",
+        "default": true
+      },
+      "import_times": {
+        "type": "list",
+        "description": "每日触发时间列表，格式 HH:MM（例如 [\"04:00\", \"16:00\"]）",
+        "default": ["04:00"]
       }
     }
   },

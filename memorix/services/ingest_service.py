@@ -22,6 +22,9 @@ class IngestService:
         role: str,
         content: str,
         source: str,
+        user_id: str = "",
+        group_id: str = "",
+        platform: str = "",
         time_meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         text = str(content or "").strip()
@@ -35,7 +38,12 @@ class IngestService:
         ctx.metadata_store.upsert_transcript_session(
             session_id=session,
             source=source,
-            metadata={"scope_key": scope_key},
+            metadata={
+                "scope_key": scope_key,
+                "user_id": str(user_id or "").strip(),
+                "group_id": str(group_id or "").strip(),
+                "platform": str(platform or "").strip(),
+            },
         )
         ctx.metadata_store.append_transcript_messages(
             session_id=session,
@@ -61,4 +69,3 @@ class IngestService:
                 "result": {"mode": "paragraph", "hash": paragraph_hash, "embedding_skipped": True},
                 "skipped": False,
             }
-

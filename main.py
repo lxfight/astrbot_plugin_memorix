@@ -122,6 +122,21 @@ class MemorixPlugin(Star):
         except ValueError:
             return [token for token in tail.split() if token]
 
+    @classmethod
+    def _parse_direct_command_tokens(cls, raw_text: str, command: str) -> list[str]:
+        text = str(raw_text or "").strip()
+        if text.startswith("/"):
+            text = text[1:].lstrip()
+        matched, tail = cls._consume_head_token(text, command)
+        if not matched:
+            return []
+        if not tail:
+            return []
+        try:
+            return [str(token).strip() for token in shlex.split(tail) if str(token).strip()]
+        except ValueError:
+            return [token for token in tail.split() if token]
+
     @staticmethod
     def _to_int(raw: Any, default: int, min_value: int = 1) -> int:
         try:
@@ -182,6 +197,9 @@ class MemorixPlugin(Star):
             role=role,
             content=text,
             source=source,
+            user_id=adapted.sender_id,
+            group_id=adapted.group_id,
+            platform=adapted.platform,
             time_meta={"event_time": adapted.timestamp} if adapted.timestamp else None,
         )
         logger.debug(
@@ -216,6 +234,7 @@ class MemorixPlugin(Star):
         query = str(getattr(event, "message_str", "") or "").strip()
         if not query:
             return
+        adapted = AstrbotEventAdapter.from_event(event, scope_key)
         start = time.perf_counter()
         try:
             search_result = await self.query_service.search(scope_key=scope_key, query=query, top_k=6)
@@ -225,13 +244,33 @@ class MemorixPlugin(Star):
                 if content:
                     lines.append(f"- {content}")
 
-            profile_hint = await self.profile_service.query(
+            profile_text = ""
+            profile_enabled = await self.profile_service.is_injection_enabled(
                 scope_key=scope_key,
-                person_keyword=str(getattr(event, "get_sender_id", lambda: "")() or ""),
-                top_k=6,
-                force_refresh=False,
+                session_id=adapted.session_id,
+                user_id=adapted.sender_id,
             )
-            profile_text = str(profile_hint.get("profile_text", "")).strip() if isinstance(profile_hint, dict) else ""
+            if profile_enabled:
+                person_id = f"{adapted.platform}:{adapted.sender_id}" if adapted.sender_id else ""
+                profile_hint = await self.profile_service.query(
+                    scope_key=scope_key,
+                    person_id=person_id,
+                    person_keyword=adapted.sender_name or adapted.sender_id,
+                    top_k=6,
+                    force_refresh=False,
+                )
+                profile_text = str(profile_hint.get("profile_text", "")).strip() if isinstance(profile_hint, dict) else ""
+                marked_pid = str((profile_hint or {}).get("person_id", "")).strip() if isinstance(profile_hint, dict) else ""
+                if not marked_pid:
+                    marked_pid = person_id
+                await self.profile_service.mark_profile_active(
+                    scope_key=scope_key,
+                    session_id=adapted.session_id,
+                    user_id=adapted.sender_id,
+                    person_id=marked_pid,
+                )
+            else:
+                logger.debug("[memorix] person profile injection disabled %s", self._event_ctx_text(event, scope_key))
 
             block_parts = []
             if lines:
@@ -259,6 +298,41 @@ class MemorixPlugin(Star):
                 self._event_ctx_text(event, scope_key),
                 exc_info=True,
             )
+
+    @filter.command("person_profile")
+    async def person_profile_switch(self, event: AstrMessageEvent):
+        tokens = self._parse_direct_command_tokens(event.message_str, "person_profile")
+        action = str(tokens[0]).strip().lower() if tokens else "status"
+        if action not in {"on", "off", "status"}:
+            yield event.plain_result("用法: /person_profile on|off|status")
+            return
+
+        scope_key = self._resolve_scope(event)
+        adapted = AstrbotEventAdapter.from_event(event, scope_key)
+        session_id = str(adapted.session_id or "").strip()
+        user_id = str(adapted.sender_id or "").strip()
+        if not session_id or not user_id:
+            yield event.plain_result("无法识别当前会话范围（session_id/user_id）")
+            return
+
+        try:
+            if action == "status":
+                data = await self.profile_service.get_injection_status(
+                    scope_key=scope_key,
+                    session_id=session_id,
+                    user_id=user_id,
+                )
+            else:
+                data = await self.profile_service.set_injection_switch(
+                    scope_key=scope_key,
+                    session_id=session_id,
+                    user_id=user_id,
+                    enabled=(action == "on"),
+                )
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] person_profile command failed: %s", exc, exc_info=True)
+            yield event.plain_result(f"人物画像开关操作失败: {exc}")
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, resp):

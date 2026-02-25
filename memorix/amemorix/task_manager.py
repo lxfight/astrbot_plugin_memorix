@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from astrbot.api import logger
 from amemorix.context import AppContext
 from amemorix.services import (
     ImportService,
@@ -15,6 +15,7 @@ from amemorix.services import (
     PersonProfileApiService,
     SummaryService,
 )
+from astrbot.api import logger
 
 TASK_STATUS_QUEUED = "queued"
 TASK_STATUS_RUNNING = "running"
@@ -46,6 +47,8 @@ class TaskManager:
         for idx in range(summary_workers):
             self._workers.append(asyncio.create_task(self._summary_worker(idx), name=f"summary-worker-{idx}"))
 
+        if bool(self.ctx.get_config("summarization.enabled", True)) and bool(self.ctx.get_config("schedule.enabled", True)):
+            self._workers.append(asyncio.create_task(self._scheduled_summary_loop(), name="scheduled-summary-loop"))
         self._workers.append(asyncio.create_task(self._auto_save_loop(), name="auto-save-loop"))
         self._workers.append(asyncio.create_task(self._memory_maintenance_loop(), name="memory-maint-loop"))
         self._workers.append(asyncio.create_task(self._person_profile_refresh_loop(), name="person-profile-loop"))
@@ -186,6 +189,277 @@ class TaskManager:
             except Exception as exc:
                 logger.warning("Auto-save loop error: %s", exc)
 
+    async def _scheduled_summary_loop(self) -> None:
+        logger.info("Scheduled summary loop started")
+        last_check = datetime.datetime.now()
+        while not self._stopping:
+            try:
+                await asyncio.sleep(60)
+                if not bool(self.ctx.get_config("summarization.enabled", True)):
+                    last_check = datetime.datetime.now()
+                    continue
+                if not bool(self.ctx.get_config("schedule.enabled", True)):
+                    last_check = datetime.datetime.now()
+                    continue
+
+                now = datetime.datetime.now()
+                import_times = self.ctx.get_config("schedule.import_times", ["04:00"])
+                if not isinstance(import_times, list):
+                    import_times = ["04:00"]
+
+                for t_str in import_times:
+                    text = str(t_str or "").strip()
+                    if not text:
+                        continue
+                    try:
+                        hour, minute = map(int, text.split(":", 1))
+                        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                        if last_check < target <= now:
+                            logger.info("trigger scheduled summary import at %s", text)
+                            await self._perform_bulk_summary_import()
+                    except Exception as exc:
+                        logger.warning("invalid schedule.import_times value: %s (%s)", text, exc)
+
+                last_check = now
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.warning("Scheduled summary loop error: %s", exc, exc_info=True)
+                await asyncio.sleep(60)
+
+    async def _perform_bulk_summary_import(self) -> None:
+        conn = self.ctx.metadata_store._conn
+        if conn is None:
+            return
+
+        context_length = max(1, int(self.ctx.get_config("summarization.context_length", 50) or 50))
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT session_id, metadata
+            FROM transcript_sessions
+            ORDER BY updated_at DESC
+            LIMIT 500
+            """
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            logger.debug("scheduled summary skipped: no transcript sessions")
+            return
+
+        success_count = 0
+        skipped_count = 0
+        fail_count = 0
+
+        for row in rows:
+            session_id = str(row[0] or "").strip()
+            if not session_id:
+                skipped_count += 1
+                continue
+
+            metadata: Dict[str, Any] = {}
+            raw_meta = row[1]
+            if raw_meta:
+                try:
+                    metadata = json.loads(raw_meta) if isinstance(raw_meta, str) else {}
+                except Exception:
+                    metadata = {}
+
+            group_id = str(metadata.get("group_id", "") or "").strip() or None
+            user_id = str(metadata.get("user_id", "") or "").strip() or None
+            if not self.ctx.is_chat_enabled(stream_id=session_id, group_id=group_id, user_id=user_id):
+                skipped_count += 1
+                continue
+
+            messages = self.ctx.metadata_store.get_transcript_messages(session_id, limit=context_length)
+            if not messages:
+                skipped_count += 1
+                continue
+
+            try:
+                result = await self.summary_service.import_from_transcript(
+                    session_id=session_id,
+                    messages=messages,
+                    source=f"chat_summary:{session_id}",
+                    context_length=context_length,
+                )
+                if bool(result.get("success")):
+                    success_count += 1
+                else:
+                    fail_count += 1
+            except Exception:
+                fail_count += 1
+                logger.warning("scheduled summary import failed: session=%s", session_id, exc_info=True)
+
+        logger.info(
+            "scheduled summary finished: success=%s skipped=%s failed=%s candidates=%s",
+            success_count,
+            skipped_count,
+            fail_count,
+            len(rows),
+        )
+
+    async def _process_reinforce_batch(self, hashes: List[str]) -> None:
+        if not hashes:
+            return
+        status_map = self.ctx.metadata_store.get_relation_status_batch(hashes)
+        if not status_map:
+            return
+
+        now = datetime.datetime.now().timestamp()
+        cooldown = float(self.ctx.get_config("memory.reinforce_cooldown_hours", 1.0) or 1.0) * 3600.0
+        max_weight = float(self.ctx.get_config("memory.max_weight", 10.0) or 10.0)
+        revive_boost = float(self.ctx.get_config("memory.revive_boost_weight", 0.5) or 0.5)
+        auto_protect = float(self.ctx.get_config("memory.auto_protect_ttl_hours", 24.0) or 24.0) * 3600.0
+
+        cursor = self.ctx.metadata_store._conn.cursor()
+        placeholders = ",".join(["?"] * len(hashes))
+        cursor.execute(f"SELECT hash, subject, object FROM relations WHERE hash IN ({placeholders})", hashes)
+        relation_info = {str(row[0]): (str(row[1]), str(row[2])) for row in cursor.fetchall()}
+
+        hashes_to_reinforce: List[str] = []
+        hashes_to_revive: List[str] = []
+
+        for hash_value in hashes:
+            status = status_map.get(hash_value)
+            info = relation_info.get(hash_value)
+            if not status or not info:
+                continue
+            if not bool(status.get("is_inactive")):
+                last_reinforced = float(status.get("last_reinforced") or 0.0)
+                if (now - last_reinforced) < cooldown:
+                    continue
+
+            src, tgt = info
+            current_weight = float(status.get("weight") or 0.0)
+            delta = 1.0 * (1.0 - (current_weight / max(0.1, max_weight)))
+            delta = max(0.0, delta)
+            self.ctx.graph_store.update_edge_weight(src, tgt, delta, max_weight=max_weight)
+
+            if bool(status.get("is_inactive")):
+                hashes_to_revive.append(hash_value)
+            else:
+                hashes_to_reinforce.append(hash_value)
+
+        if hashes_to_revive:
+            self.ctx.metadata_store.mark_relations_active(hashes_to_revive, boost_weight=revive_boost)
+            self.ctx.metadata_store.update_relations_protection(
+                hashes_to_revive,
+                protected_until=now + auto_protect,
+                last_reinforced=now,
+            )
+            logger.info("memory reinforce revived relations: %s", len(hashes_to_revive))
+
+        if hashes_to_reinforce:
+            self.ctx.metadata_store.update_relations_protection(
+                hashes_to_reinforce,
+                protected_until=now + auto_protect,
+                last_reinforced=now,
+            )
+
+    async def _process_freeze_and_prune(self) -> None:
+        now = datetime.datetime.now().timestamp()
+        prune_threshold = float(self.ctx.get_config("memory.prune_threshold", 0.1) or 0.1)
+        freeze_duration = float(self.ctx.get_config("memory.freeze_duration_hours", 24.0) or 24.0) * 3600.0
+
+        low_edges = self.ctx.graph_store.get_low_weight_edges(prune_threshold)
+        hashes_to_freeze: List[str] = []
+        edges_to_deactivate: List[Tuple[str, str]] = []
+
+        for src, tgt in low_edges:
+            src_canon = self.ctx.graph_store._canonicalize(src)  # noqa: SLF001
+            tgt_canon = self.ctx.graph_store._canonicalize(tgt)  # noqa: SLF001
+            if src_canon not in self.ctx.graph_store._node_to_idx:  # noqa: SLF001
+                continue
+            if tgt_canon not in self.ctx.graph_store._node_to_idx:  # noqa: SLF001
+                continue
+            src_idx = self.ctx.graph_store._node_to_idx[src_canon]  # noqa: SLF001
+            tgt_idx = self.ctx.graph_store._node_to_idx[tgt_canon]  # noqa: SLF001
+            edge_hashes = list(self.ctx.graph_store._edge_hash_map.get((src_idx, tgt_idx), set()))  # noqa: SLF001
+            if not edge_hashes:
+                continue
+
+            statuses = self.ctx.metadata_store.get_relation_status_batch(edge_hashes)
+            is_protected = False
+            current_hashes: List[str] = []
+            for hash_value, status in statuses.items():
+                if bool(status.get("is_pinned")) or float(status.get("protected_until") or 0.0) > now:
+                    is_protected = True
+                    break
+                if not bool(status.get("is_inactive")):
+                    current_hashes.append(hash_value)
+            if not is_protected and current_hashes:
+                hashes_to_freeze.extend(current_hashes)
+                edges_to_deactivate.append((src, tgt))
+
+        if hashes_to_freeze:
+            self.ctx.metadata_store.mark_relations_inactive(hashes_to_freeze, inactive_since=now)
+            self.ctx.graph_store.deactivate_edges(edges_to_deactivate)
+            logger.info(
+                "memory freeze complete: relations=%s edges=%s",
+                len(hashes_to_freeze),
+                len(edges_to_deactivate),
+            )
+
+        cutoff = now - max(1.0, freeze_duration)
+        expired_hashes = self.ctx.metadata_store.get_prune_candidates(cutoff)
+        if expired_hashes:
+            cursor = self.ctx.metadata_store._conn.cursor()
+            placeholders = ",".join(["?"] * len(expired_hashes))
+            cursor.execute(
+                f"SELECT hash, subject, object FROM relations WHERE hash IN ({placeholders})",
+                expired_hashes,
+            )
+            ops = [(str(row[1]), str(row[2]), str(row[0])) for row in cursor.fetchall()]
+            if ops:
+                self.ctx.graph_store.prune_relation_hashes(ops)
+            deleted = self.ctx.metadata_store.backup_and_delete_relations(expired_hashes)
+            logger.info("memory prune complete: relations=%s", deleted)
+
+        self.ctx.graph_store.save()
+
+    async def _orphan_gc_phase(self) -> None:
+        orphan_cfg = self.ctx.get_config("memory.orphan", {}) or {}
+        if not isinstance(orphan_cfg, dict):
+            orphan_cfg = {}
+        if not bool(orphan_cfg.get("enable_soft_delete", True)):
+            return
+
+        entity_retention = float(orphan_cfg.get("entity_retention_days", 7.0) or 7.0) * 86400.0
+        para_retention = float(orphan_cfg.get("paragraph_retention_days", 7.0) or 7.0) * 86400.0
+        grace = float(orphan_cfg.get("sweep_grace_hours", 24.0) or 24.0) * 3600.0
+
+        isolated = self.ctx.graph_store.get_isolated_nodes(include_inactive=True)
+        if isolated:
+            entity_candidates = self.ctx.metadata_store.get_entity_gc_candidates(isolated, entity_retention)
+            if entity_candidates:
+                marked = self.ctx.metadata_store.mark_as_deleted(entity_candidates, "entity")
+                if marked > 0:
+                    logger.info("orphan gc mark entities: %s", marked)
+
+        para_candidates = self.ctx.metadata_store.get_paragraph_gc_candidates(para_retention)
+        if para_candidates:
+            marked = self.ctx.metadata_store.mark_as_deleted(para_candidates, "paragraph")
+            if marked > 0:
+                logger.info("orphan gc mark paragraphs: %s", marked)
+
+        dead_paras = self.ctx.metadata_store.sweep_deleted_items("paragraph", grace)
+        if dead_paras:
+            para_hashes = [str(item[0]) for item in dead_paras if item and item[0]]
+            deleted = self.ctx.metadata_store.physically_delete_paragraphs(para_hashes)
+            if deleted > 0:
+                logger.info("orphan gc sweep paragraphs: %s", deleted)
+
+        dead_entities = self.ctx.metadata_store.sweep_deleted_items("entity", grace)
+        if dead_entities:
+            entity_hashes = [str(item[0]) for item in dead_entities if item and item[0]]
+            entity_names = [str(item[1]) for item in dead_entities if item and item[1]]
+            if entity_names:
+                self.ctx.graph_store.delete_nodes(entity_names)
+            deleted = self.ctx.metadata_store.physically_delete_entities(entity_hashes)
+            if deleted > 0:
+                logger.info("orphan gc sweep entities: %s", deleted)
+
     async def _memory_maintenance_loop(self) -> None:
         while not self._stopping:
             try:
@@ -195,53 +469,20 @@ class TaskManager:
                 if not bool(self.ctx.get_config("memory.enabled", True)):
                     continue
 
-                half_life = float(self.ctx.get_config("memory.half_life_hours", 24.0))
-                if half_life > 0:
-                    factor = 0.5 ** (interval_h / half_life)
-                    self.ctx.graph_store.decay(factor)
+                async with self.ctx.memory_lock:
+                    if bool(self.ctx.get_config("memory.enable_auto_reinforce", True)):
+                        buffer_hashes = list(self.ctx.reinforce_buffer)
+                        self.ctx.reinforce_buffer.clear()
+                        if buffer_hashes:
+                            await self._process_reinforce_batch(buffer_hashes)
 
-                prune_threshold = float(self.ctx.get_config("memory.prune_threshold", 0.1))
-                low_edges = self.ctx.graph_store.get_low_weight_edges(prune_threshold)
-                hashes_to_freeze: List[str] = []
-                edges_to_deactivate = []
-                for src, tgt in low_edges:
-                    src_c = self.ctx.graph_store._canonicalize(src)  # noqa: SLF001
-                    tgt_c = self.ctx.graph_store._canonicalize(tgt)  # noqa: SLF001
-                    s_idx = self.ctx.graph_store._node_to_idx.get(src_c)  # noqa: SLF001
-                    t_idx = self.ctx.graph_store._node_to_idx.get(tgt_c)  # noqa: SLF001
-                    if s_idx is None or t_idx is None:
-                        continue
-                    edge_hashes = list(self.ctx.graph_store._edge_hash_map.get((s_idx, t_idx), set()))  # noqa: SLF001
-                    if not edge_hashes:
-                        continue
-                    status = self.ctx.metadata_store.get_relation_status_batch(edge_hashes)
-                    protected = any(
-                        (v.get("is_pinned") or ((v.get("protected_until") or 0) > datetime.datetime.now().timestamp()))
-                        for v in status.values()
-                    )
-                    if not protected:
-                        hashes_to_freeze.extend(edge_hashes)
-                        edges_to_deactivate.append((src, tgt))
+                    half_life = float(self.ctx.get_config("memory.half_life_hours", 24.0))
+                    if half_life > 0:
+                        factor = 0.5 ** (interval_h / half_life)
+                        self.ctx.graph_store.decay(factor)
 
-                if hashes_to_freeze:
-                    self.ctx.metadata_store.mark_relations_inactive(hashes_to_freeze)
-                    self.ctx.graph_store.deactivate_edges(edges_to_deactivate)
-
-                freeze_hours = float(self.ctx.get_config("memory.freeze_duration_hours", 24.0))
-                cutoff = datetime.datetime.now().timestamp() - max(1.0, freeze_hours * 3600.0)
-                expired = self.ctx.metadata_store.get_prune_candidates(cutoff)
-                if expired:
-                    cursor = self.ctx.metadata_store._conn.cursor()
-                    placeholders = ",".join(["?"] * len(expired))
-                    cursor.execute(
-                        f"SELECT hash, subject, object FROM relations WHERE hash IN ({placeholders})",
-                        expired,
-                    )
-                    ops = [(str(row[1]), str(row[2]), str(row[0])) for row in cursor.fetchall()]
-                    if ops:
-                        self.ctx.graph_store.prune_relation_hashes(ops)
-                    self.ctx.metadata_store.backup_and_delete_relations(expired)
-                self.ctx.graph_store.save()
+                    await self._process_freeze_and_prune()
+                    await self._orphan_gc_phase()
             except asyncio.CancelledError:
                 break
             except Exception as exc:

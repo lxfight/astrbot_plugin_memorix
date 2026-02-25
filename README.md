@@ -110,6 +110,7 @@ https://github.com/exynos967/astrbot_plugin_memorix
 | `/mem profile [人物关键词] [top_k]` | 查询人物画像 |
 | `/mem summary_now [上下文长度]` | 立即生成会话总结并写入记忆 |
 | `/mem ui` | 获取 WebUI 访问地址 |
+| `/person_profile on\|off\|status` | 控制当前会话+用户的人物画像注入开关 |
 
 ### 管理员命令
 
@@ -218,6 +219,13 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `summarization.enabled` | bool | `true` | 启用总结导入 |
 | `summarization.context_length` | int | `50` | 总结上下文长度 |
 | `summarization.default_knowledge_type` | string | `narrative` | 总结知识类型（narrative / factual / mixed / structured / auto） |
+
+### 定时总结（schedule）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `schedule.enabled` | bool | `true` | 启用定时总结任务 |
+| `schedule.import_times` | list | `["04:00"]` | 每日触发时间点（HH:MM） |
 
 ### WebUI
 

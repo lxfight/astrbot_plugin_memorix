@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import tomllib
-
 from astrbot.api import logger
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -110,12 +109,22 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_weight": 10.0,
         "revive_boost_weight": 0.5,
         "auto_protect_ttl_hours": 24.0,
+        "orphan": {
+            "enable_soft_delete": True,
+            "entity_retention_days": 7.0,
+            "paragraph_retention_days": 7.0,
+            "sweep_grace_hours": 24.0,
+        },
     },
     "summarization": {
         "enabled": True,
         "context_length": 50,
         "include_personality": True,
         "default_knowledge_type": "narrative",
+    },
+    "schedule": {
+        "enabled": True,
+        "import_times": ["04:00"],
     },
     "person_profile": {
         "enabled": True,
