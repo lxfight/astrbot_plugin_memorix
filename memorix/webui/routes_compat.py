@@ -1059,19 +1059,6 @@ class MemorixServer:
                     source_note="webui:person_profile_query",
                 )
                 if not result.get("success", False):
-                    # 允许在未建立 registry 时用关键词直接生成临时画像快照。
-                    # 这样 WebUI 可先用昵称/关键词检索出画像，再逐步沉淀 registry。
-                    fallback_pid = str(data.person_keyword or "").strip()
-                    if fallback_pid:
-                        result = await service.query_person_profile(
-                            person_id=fallback_pid,
-                            person_keyword=fallback_pid,
-                            top_k=max(4, int(data.top_k or 12)),
-                            ttl_seconds=ttl_seconds,
-                            force_refresh=bool(data.force_refresh),
-                            source_note="webui:person_profile_query_fallback",
-                        )
-                if not result.get("success", False):
                     raise HTTPException(status_code=400, detail=result.get("error", "人物画像查询失败"))
                 return result
             except HTTPException:
