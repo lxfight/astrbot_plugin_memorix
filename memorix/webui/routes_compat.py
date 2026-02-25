@@ -207,22 +207,12 @@ class MemorixServer:
                        for e in edges:
                            degrees[e['from']] = degrees.get(e['from'], 0) + 1
                            degrees[e['to']] = degrees.get(e['to'], 0) + 1
-                       
-                       # 过滤掉局部度数为 1 的节点。
-                       # 若过滤后会导致整图为空，则回退保留原始子图，避免 WebUI 显示空白。
-                       filtered_nodes = [n for n in nodes if degrees.get(n['id'], 0) != 1]
-                       if filtered_nodes:
-                           node_ids = {n['id'] for n in filtered_nodes}
-                           filtered_edges = [e for e in edges if e['from'] in node_ids and e['to'] in node_ids]
-                           nodes = filtered_nodes
-                           edges = filtered_edges
-                       else:
-                           logger.info(
-                               "source graph leaf-prune skipped to avoid empty graph: source=%s nodes=%s edges=%s",
-                               source,
-                               len(nodes),
-                               len(edges),
-                           )
+
+                       # 过滤掉局部度数为 1 的节点
+                       nodes = [n for n in nodes if degrees.get(n['id'], 0) != 1]
+                       node_ids = set(n['id'] for n in nodes)
+                       # 只保留连接两个已存在节点的边
+                       edges = [e for e in edges if e['from'] in node_ids and e['to'] in node_ids]
 
                     return {
                         "nodes": nodes, 
@@ -243,44 +233,6 @@ class MemorixServer:
                 raise HTTPException(status_code=503, detail="Graph store not initialized")
             
             node_names = self.plugin.graph_store.get_nodes()
-            if not node_names and self.plugin.metadata_store is not None:
-                try:
-                    registry = self.plugin.metadata_store.list_person_registry(page=1, page_size=300)
-                    items = registry.get("items", []) if isinstance(registry, dict) else []
-                    fallback_nodes: List[Dict[str, Any]] = []
-                    seen_ids = set()
-                    for item in items:
-                        pid = str(item.get("person_id", "")).strip()
-                        uid = str(item.get("user_id", "")).strip()
-                        node_id = pid or uid
-                        if not node_id or node_id in seen_ids:
-                            continue
-                        seen_ids.add(node_id)
-                        label = (
-                            str(item.get("person_name", "")).strip()
-                            or str(item.get("nickname", "")).strip()
-                            or uid
-                            or node_id
-                        )
-                        fallback_nodes.append(
-                            {
-                                "id": node_id,
-                                "label": label,
-                                "is_ghost": False,
-                            }
-                        )
-                    if fallback_nodes:
-                        return {
-                            "nodes": fallback_nodes,
-                            "edges": [],
-                            "debug": {
-                                "fallback": "person_registry",
-                                "nodes": len(fallback_nodes),
-                                "edges": 0,
-                            },
-                        }
-                except Exception as e:
-                    logger.warning(f"Build fallback graph from person_registry failed: {e}")
             
             # --- 智能显著性过滤 (Saliency Filtering) ---
             if exclude_leaf:
