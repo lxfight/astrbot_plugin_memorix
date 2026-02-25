@@ -22,7 +22,7 @@ class MemorixPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = dict(config or {})
-        self.scope_router = ScopeRouter(mode=str(self.config.get("scope", {}).get("mode", "platform_global")))
+        self.scope_router = ScopeRouter(mode=str(self.config.get("scope", {}).get("mode", "group_global")))
         self.runtime_manager = ScopeRuntimeManager(
             plugin_name="astrbot_plugin_memorix",
             plugin_config=self.config,
@@ -218,6 +218,9 @@ class MemorixPlugin(Star):
         if not text and self._bool_cfg(self.config, "ingest.skip_empty_text", True):
             logger.debug("[memorix] skip empty message %s", self._event_ctx_text(event))
             return
+        if text.startswith("/") and self._bool_cfg(self.config, "ingest.skip_command_messages", True):
+            logger.debug("[memorix] skip command message %s", self._event_ctx_text(event))
+            return
         try:
             await self._ingest_event_message(event, "user", text)
         except Exception as exc:
@@ -237,7 +240,18 @@ class MemorixPlugin(Star):
         adapted = AstrbotEventAdapter.from_event(event, scope_key)
         start = time.perf_counter()
         try:
-            search_result = await self.query_service.search(scope_key=scope_key, query=query, top_k=6)
+            source = f"chat:{adapted.platform}:{adapted.session_id}"
+            search_result = await self.query_service.search(
+                scope_key=scope_key,
+                query=query,
+                top_k=6,
+                stream_id=adapted.session_id,
+                group_id=adapted.group_id,
+                user_id=adapted.sender_id,
+                source=source,
+                strict_source=True,
+                enforce_chat_filter=False,
+            )
             lines = []
             for item in (search_result.get("results") or [])[:6]:
                 content = str(item.get("content", "")).strip()

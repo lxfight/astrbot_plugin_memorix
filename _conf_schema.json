@@ -5,8 +5,8 @@
     "items": {
       "mode": {
         "type": "string",
-        "description": "作用域模式：同平台共享；同平台按用户隔离；同平台按群隔离（私聊退化到用户）；按 unified_msg_origin 最细粒度隔离",
-        "default": "platform_global",
+        "description": "作用域模式：同平台共享；同平台按用户隔离；同平台按群隔离（私聊退化到用户，推荐）；按 unified_msg_origin 最细粒度隔离",
+        "default": "group_global",
         "options": ["platform_global", "user_global", "group_global", "umo"]
       }
     }
@@ -23,6 +23,11 @@
       "skip_empty_text": {
         "type": "bool",
         "description": "忽略空文本",
+        "default": true
+      },
+      "skip_command_messages": {
+        "type": "bool",
+        "description": "忽略以 / 开头的命令消息，减少记忆噪声",
         "default": true
       }
     }

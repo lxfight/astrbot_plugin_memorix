@@ -13,9 +13,9 @@ import time
 from typing import List, Optional, Union
 
 import numpy as np
+from astrbot.api import logger
 from openai import AsyncOpenAI
 
-from astrbot.api import logger
 
 def _first_env(*keys: str) -> str:
     for key in keys:
@@ -71,6 +71,7 @@ class EmbeddingAPIAdapter:
 
         self._dimension: Optional[int] = None
         self._dimension_detected = False
+        self._supports_dimensions: Optional[bool] = None
         self._client: Optional[AsyncOpenAI] = None
 
         self._total_encoded = 0
@@ -103,16 +104,29 @@ class EmbeddingAPIAdapter:
     ) -> List[List[float]]:
         client = self._get_client()
         payload = {"model": self.openai_model, "input": inputs}
-        if dimensions is not None:
+        with_dimensions = dimensions is not None and self._supports_dimensions is not False
+        if with_dimensions:
             payload["dimensions"] = int(dimensions)
 
         last_error: Optional[Exception] = None
         for attempt in range(1, self.max_attempts + 1):
             try:
                 resp = await client.embeddings.create(**payload)
+                if with_dimensions:
+                    self._supports_dimensions = True
                 return [list(item.embedding) for item in resp.data]
             except Exception as exc:
                 last_error = exc
+                if with_dimensions and self._is_dimensions_unsupported_error(exc):
+                    fallback_payload = dict(payload)
+                    fallback_payload.pop("dimensions", None)
+                    logger.warning("Embedding provider does not support `dimensions`; fallback to natural size.")
+                    self._supports_dimensions = False
+                    try:
+                        resp = await client.embeddings.create(**fallback_payload)
+                        return [list(item.embedding) for item in resp.data]
+                    except Exception as fallback_exc:
+                        last_error = fallback_exc
                 if attempt >= self.max_attempts:
                     break
                 wait_s = min(
@@ -130,6 +144,21 @@ class EmbeddingAPIAdapter:
 
         assert last_error is not None
         raise last_error
+
+    @staticmethod
+    def _is_dimensions_unsupported_error(exc: Exception) -> bool:
+        text = str(exc or "").lower()
+        if not text:
+            return False
+        if "dimensions" in text and ("unsupported" in text or "unknown" in text or "unrecognized" in text):
+            return True
+        if "extra fields not permitted" in text and "dimensions" in text:
+            return True
+        if "bad parameter or other api misuse" in text:
+            return True
+        if "invalid" in text and "dimensions" in text:
+            return True
+        return False
 
     async def _detect_dimension(self) -> int:
         if self._dimension_detected and self._dimension is not None:
@@ -178,12 +207,7 @@ class EmbeddingAPIAdapter:
             input_texts = list(texts)
             single = False
 
-        target_dim = dimensions
-        if target_dim is None:
-            if not self._dimension_detected:
-                await self._detect_dimension()
-            target_dim = self._dimension or self.default_dimension
-        target_dim = int(target_dim)
+        target_dim = int(dimensions) if dimensions is not None else int(self.default_dimension)
 
         if not input_texts:
             empty = np.zeros((0, target_dim), dtype=np.float32)
@@ -201,6 +225,18 @@ class EmbeddingAPIAdapter:
                     arr = np.asarray(vectors, dtype=np.float32)
                     if arr.ndim == 1:
                         arr = arr.reshape(1, -1)
+                    if arr.shape[1] != target_dim:
+                        current_dim = arr.shape[1]
+                        if current_dim > target_dim:
+                            arr = arr[:, :target_dim]
+                        else:
+                            pad = np.zeros((arr.shape[0], target_dim - current_dim), dtype=np.float32)
+                            arr = np.concatenate([arr, pad], axis=1)
+                        logger.warning(
+                            "Embedding dimension adjusted: model_dim=%s target_dim=%s",
+                            current_dim,
+                            target_dim,
+                        )
                     return arr
                 except Exception as exc:
                     self._total_errors += len(chunk)

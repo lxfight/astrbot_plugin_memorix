@@ -10,10 +10,10 @@ _SCOPE_PATTERN = re.compile(r"[^0-9A-Za-z:._-]+")
 
 @dataclass(slots=True)
 class ScopeRouter:
-    mode: str = "platform_global"
+    mode: str = "group_global"
 
     def resolve(self, event) -> str:
-        mode = str(self.mode or "platform_global").strip().lower()
+        mode = str(self.mode or "group_global").strip().lower()
         platform = self._safe_str(getattr(event, "get_platform_name", lambda: "unknown")()) or "unknown"
         sender = self._safe_str(getattr(event, "get_sender_id", lambda: "unknown")()) or "unknown"
         group = self._safe_str(getattr(event, "get_group_id", lambda: "")())

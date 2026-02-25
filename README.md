@@ -130,9 +130,9 @@ https://github.com/exynos967/astrbot_plugin_memorix
 
 | 模式 | 行为 | 适用场景 |
 |---|---|---|
-| `platform_global` | 同平台所有会话共享 **（默认）** | 希望机器人跨群/跨会话保持记忆连续性 |
+| `platform_global` | 同平台所有会话共享 | 希望机器人跨群/跨会话保持记忆连续性 |
 | `user_global` | 同平台按用户隔离 | 需要用户级隐私隔离 |
-| `group_global` | 同平台按群隔离，私聊退化为用户隔离 | 以群为单位沉淀独立记忆 |
+| `group_global` | 同平台按群隔离，私聊退化为用户隔离 **（默认）** | 以群为单位沉淀独立记忆，降低串群污染 |
 | `umo` | 按 `unified_msg_origin` 最细粒度隔离 | 最严格的隔离需求 |
 
 ## 存储架构
@@ -159,7 +159,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `scope.mode` | string | `platform_global` | 作用域模式 |
+| `scope.mode` | string | `group_global` | 作用域模式 |
 
 ### 写入（ingest）
 
@@ -167,6 +167,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 |---|---|---|---|
 | `ingest.record_all_events` | bool | `true` | 是否记录所有消息事件 |
 | `ingest.skip_empty_text` | bool | `true` | 忽略空文本消息 |
+| `ingest.skip_command_messages` | bool | `true` | 忽略以 `/` 开头的命令消息 |
 
 ### 提供商（provider）
 

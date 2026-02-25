@@ -21,6 +21,7 @@ from .search_postprocess import (
 )
 from .time_parser import parse_query_time_range
 
+
 def _get_config_value(config: Optional[dict], key: str, default: Any = None) -> Any:
     if not isinstance(config, dict):
         return default
@@ -50,6 +51,7 @@ class SearchExecutionRequest:
     time_to: Optional[str] = None
     person: Optional[str] = None
     source: Optional[str] = None
+    strict_source: bool = False
     use_threshold: bool = True
     enable_ppr: bool = True
 
@@ -185,12 +187,71 @@ class SearchExecutionService:
             "time_to_ts": temporal.time_to if temporal else None,
             "person": _sanitize_text(request.person),
             "source": _sanitize_text(request.source),
+            "strict_source": bool(request.strict_source),
             "top_k": int(top_k),
             "use_threshold": bool(request.use_threshold),
             "enable_ppr": bool(request.enable_ppr),
         }
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         return hashlib.sha1(payload_json.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _resolve_result_source(item: Any, metadata_store: Optional[Any]) -> Optional[str]:
+        if metadata_store is None:
+            return None
+        hash_value = _sanitize_text(getattr(item, "hash_value", ""))
+        result_type = _sanitize_text(getattr(item, "result_type", ""))
+        if not hash_value:
+            return None
+        try:
+            if result_type == "paragraph":
+                paragraph = metadata_store.get_paragraph(hash_value)
+                if isinstance(paragraph, dict):
+                    source = _sanitize_text(paragraph.get("source"))
+                    return source or None
+                return None
+            if result_type == "relation":
+                relation = metadata_store.get_relation(hash_value)
+                if not isinstance(relation, dict):
+                    return None
+                source_paragraph = _sanitize_text(relation.get("source_paragraph"))
+                if not source_paragraph:
+                    return None
+                paragraph = metadata_store.get_paragraph(source_paragraph)
+                if isinstance(paragraph, dict):
+                    source = _sanitize_text(paragraph.get("source"))
+                    return source or None
+        except Exception:
+            logger.debug(
+                "resolve result source failed: hash=%s type=%s",
+                hash_value,
+                result_type,
+                exc_info=True,
+            )
+        return None
+
+    @staticmethod
+    def _apply_source_filter(
+        results: List[Any],
+        *,
+        source: str,
+        strict: bool,
+        metadata_store: Optional[Any],
+    ) -> List[Any]:
+        target = _sanitize_text(source)
+        if not target or not results:
+            return results
+
+        filtered: List[Any] = []
+        for item in results:
+            item_source = SearchExecutionService._resolve_result_source(item, metadata_store)
+            if not item_source:
+                if not strict:
+                    filtered.append(item)
+                continue
+            if item_source == target:
+                filtered.append(item)
+        return filtered
 
     @staticmethod
     async def execute(
@@ -352,6 +413,17 @@ class SearchExecutionService:
                             fallback_added,
                         )
 
+                if request.source:
+                    metadata_store = SearchExecutionService._resolve_runtime_component(
+                        plugin_config, plugin_instance, "metadata_store"
+                    )
+                    retrieved = SearchExecutionService._apply_source_filter(
+                        list(retrieved),
+                        source=request.source,
+                        strict=bool(request.strict_source),
+                        metadata_store=metadata_store,
+                    )
+
                 dedup_enabled = bool(
                     _get_config_value(
                         plugin_config,
@@ -424,4 +496,3 @@ class SearchExecutionService:
                 }
             )
         return serialized
-

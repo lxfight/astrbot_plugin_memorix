@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from amemorix.context import AppContext
 from core.utils.search_execution_service import (
     SearchExecutionRequest,
     SearchExecutionService,
 )
 from core.utils.time_parser import parse_query_time_range
-
-from amemorix.context import AppContext
 
 
 class QueryService:
@@ -24,12 +23,28 @@ class QueryService:
         cfg["metadata_store"] = self.ctx.metadata_store
         return cfg
 
-    async def search(self, *, query: str, top_k: Optional[int] = None) -> Dict[str, Any]:
+    async def search(
+        self,
+        *,
+        query: str,
+        top_k: Optional[int] = None,
+        stream_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        source: Optional[str] = None,
+        strict_source: bool = False,
+        enforce_chat_filter: bool = False,
+    ) -> Dict[str, Any]:
         req = SearchExecutionRequest(
             caller="v1.search",
+            stream_id=stream_id,
+            group_id=group_id,
+            user_id=user_id,
             query_type="search",
             query=str(query or ""),
             top_k=top_k,
+            source=source,
+            strict_source=bool(strict_source),
             use_threshold=True,
             enable_ppr=bool(self.ctx.get_config("retrieval.enable_ppr", True)),
         )
@@ -38,7 +53,7 @@ class QueryService:
             threshold_filter=self.ctx.threshold_filter,
             plugin_config=self._plugin_config(),
             request=req,
-            enforce_chat_filter=False,
+            enforce_chat_filter=bool(enforce_chat_filter),
             reinforce_access=True,
         )
         if not result.success:
@@ -61,12 +76,19 @@ class QueryService:
         person: Optional[str] = None,
         source: Optional[str] = None,
         top_k: Optional[int] = None,
+        stream_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        enforce_chat_filter: bool = False,
     ) -> Dict[str, Any]:
         # Validate format eagerly to provide deterministic error text.
         parse_query_time_range(time_from, time_to)
 
         req = SearchExecutionRequest(
             caller="v1.time",
+            stream_id=stream_id,
+            group_id=group_id,
+            user_id=user_id,
             query_type="time",
             query=str(query or ""),
             top_k=top_k,
@@ -82,7 +104,7 @@ class QueryService:
             threshold_filter=self.ctx.threshold_filter,
             plugin_config=self._plugin_config(),
             request=req,
-            enforce_chat_filter=False,
+            enforce_chat_filter=bool(enforce_chat_filter),
             reinforce_access=True,
         )
         if not result.success:
@@ -142,4 +164,3 @@ class QueryService:
             "retriever": self.ctx.retriever.get_statistics(),
             "sparse": self.ctx.sparse_index.stats() if self.ctx.sparse_index is not None else None,
         }
-
