@@ -6,18 +6,19 @@
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple, Union
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-
 from astrbot.api import logger
-from ..storage import VectorStore, GraphStore, MetadataStore
+
 from ..embedding.api_adapter import EmbeddingAPIAdapter as EmbeddingManager
+from ..storage import GraphStore, MetadataStore, VectorStore
 from ..utils.matcher import AhoCorasick
 from ..utils.time_parser import format_timestamp
-from .pagerank import PersonalizedPageRank, PageRankConfig
+from .pagerank import PageRankConfig, PersonalizedPageRank
 from .sparse_bm25 import SparseBM25Config, SparseBM25Index
+
 
 class RetrievalStrategy(Enum):
     """检索策略"""
@@ -250,7 +251,7 @@ class DualPathRetriever:
 
         # 调试模式：打印结果原文
         if self.config.debug:
-            logger.info(f"[DEBUG] 检索结果内容原文:")
+            logger.info("[DEBUG] 检索结果内容原文:")
             for i, res in enumerate(results):
                 logger.info(f"  {i+1}. [{res.result_type}] (Score: {res.score:.4f}) {res.content}")
 
@@ -730,9 +731,9 @@ class DualPathRetriever:
         Returns:
             (段落结果, 关系结果)
         """
-        # 使用 asyncio.gather 并发执行两个搜索任务
-        # 由于 _search_paragraphs 和 _search_relations 是 CPU 密集型同步函数，
-        # 使用 asyncio.to_thread 在线程池中执行
+        # 使用 asyncio.gather 并发执行两个搜索任务。
+        # 注意：SQLite 在多线程共享连接时可能出现间歇性 misuse，
+        # 发生后自动降级顺序重试，保证检索可用性。
         try:
             para_task = asyncio.to_thread(
                 self._search_paragraphs,
@@ -750,20 +751,58 @@ class DualPathRetriever:
             para_results, rel_results = await asyncio.gather(
                 para_task, rel_task, return_exceptions=True
             )
-            
-            # 处理异常
-            if isinstance(para_results, Exception):
-                logger.error(f"段落检索失败: {para_results}")
+
+            para_exc = para_results if isinstance(para_results, Exception) else None
+            rel_exc = rel_results if isinstance(rel_results, Exception) else None
+
+            if para_exc is not None:
+                logger.error(f"段落检索失败: {para_exc}")
+            if rel_exc is not None:
+                logger.error(f"关系检索失败: {rel_exc}")
+
+            if self._has_sqlite_api_misuse_error(para_exc, rel_exc):
+                logger.warning(
+                    "检测到 SQLite 并发检索异常，自动降级顺序重试并关闭并行检索: para_err=%s rel_err=%s",
+                    para_exc,
+                    rel_exc,
+                )
+                try:
+                    para_results, rel_results = await asyncio.to_thread(
+                        self._sequential_retrieve,
+                        query_emb,
+                        temporal,
+                    )
+                    self.config.enable_parallel = False
+                    return para_results, rel_results
+                except Exception as retry_exc:
+                    logger.error(f"顺序重试失败: {retry_exc}", exc_info=True)
+                    return [], []
+
+            if para_exc is not None:
                 para_results = []
-            if isinstance(rel_results, Exception):
-                logger.error(f"关系检索失败: {rel_results}")
+            if rel_exc is not None:
                 rel_results = []
-                
+
             return para_results, rel_results
-            
+
         except Exception as e:
-            logger.error(f"并行检索失败: {e}")
+            logger.error(f"并行检索失败: {e}", exc_info=True)
             return [], []
+
+    @staticmethod
+    def _has_sqlite_api_misuse_error(
+        para_exc: Optional[Exception],
+        rel_exc: Optional[Exception],
+    ) -> bool:
+        for exc in (para_exc, rel_exc):
+            if exc is None:
+                continue
+            text = str(exc).strip().lower()
+            if "bad parameter or other api misuse" in text:
+                return True
+            if "sqlite" in text and "misuse" in text:
+                return True
+        return False
 
     def _sequential_retrieve(
         self,
@@ -1315,4 +1354,3 @@ class DualPathRetriever:
             f"para_k={self.config.top_k_paragraphs}, "
             f"rel_k={self.config.top_k_relations})"
         )
-
