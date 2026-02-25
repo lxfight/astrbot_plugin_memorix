@@ -29,6 +29,7 @@ class AppContext:
     person_profile_service: PersonProfileService
     data_dir: Path
     config: Dict[str, Any]
+    provider_bridge: Any = None
     _runtime_auto_save: Optional[bool] = None
     _request_dedup_cache: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     _request_dedup_inflight: Dict[str, asyncio.Future] = field(default_factory=dict)

@@ -23,7 +23,11 @@ class MemorixPlugin(Star):
         super().__init__(context)
         self.config = dict(config or {})
         self.scope_router = ScopeRouter(mode=str(self.config.get("scope", {}).get("mode", "platform_global")))
-        self.runtime_manager = ScopeRuntimeManager(plugin_name="astrbot_plugin_memorix", plugin_config=self.config)
+        self.runtime_manager = ScopeRuntimeManager(
+            plugin_name="astrbot_plugin_memorix",
+            plugin_config=self.config,
+            astrbot_context=context,
+        )
 
         self.ingest_service = IngestService(self.runtime_manager, self.config)
         self.query_service = QueryService(self.runtime_manager)

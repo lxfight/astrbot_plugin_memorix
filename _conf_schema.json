@@ -27,13 +27,33 @@
       }
     }
   },
+  "provider": {
+    "type": "object",
+    "description": "AstrBot 原生模型提供商选择",
+    "items": {
+      "embedding_provider_id": {
+        "type": "string",
+        "description": "Embedding 提供商 ID（用于向量化检索）",
+        "default": "",
+        "_special": "select_provider",
+        "obvious_hint": true
+      },
+      "chat_provider_id": {
+        "type": "string",
+        "description": "聊天提供商 ID（用于总结导入）",
+        "default": "",
+        "_special": "select_provider",
+        "obvious_hint": true
+      }
+    }
+  },
   "embedding": {
     "type": "object",
-    "description": "向量配置",
+    "description": "向量配置（由 AstrBot Embedding Provider 执行）",
     "items": {
       "enabled": {
         "type": "bool",
-        "description": "启用远程 embedding",
+        "description": "启用 AstrBot Embedding Provider；关闭时使用本地确定性向量回退",
         "default": false,
         "obvious_hint": true
       },
@@ -51,43 +71,6 @@
         "type": "int",
         "description": "并发请求数",
         "default": 5
-      },
-      "openapi": {
-        "type": "object",
-        "description": "OpenAI-compatible 端点",
-        "items": {
-          "base_url": {
-            "type": "string",
-            "description": "API Base URL（可不带 /v1，系统会自动补全）",
-            "default": ""
-          },
-          "api_key": {
-            "type": "string",
-            "description": "API Key",
-            "default": "",
-            "obvious_hint": true
-          },
-          "model": {
-            "type": "string",
-            "description": "Embedding 模型",
-            "default": "text-embedding-3-large"
-          },
-          "chat_model": {
-            "type": "string",
-            "description": "Summary/Profile 模型",
-            "default": "gpt-4o"
-          },
-          "timeout_seconds": {
-            "type": "int",
-            "description": "请求超时",
-            "default": 30
-          },
-          "max_retries": {
-            "type": "int",
-            "description": "最大重试次数",
-            "default": 3
-          }
-        }
       }
     }
   },
@@ -198,11 +181,6 @@
         "type": "bool",
         "description": "启用总结导入",
         "default": true
-      },
-      "model_name": {
-        "type": "string",
-        "description": "总结模型（auto 使用 embedding.chat_model）",
-        "default": "auto"
       },
       "context_length": {
         "type": "int",

@@ -88,17 +88,15 @@ https://github.com/exynos967/astrbot_plugin_memorix
 
 插件安装后**无需任何配置**即可启动。默认使用本地 embedding 回退，所有功能可用。
 
-### 推荐配置（启用远程 Embedding）
+### 推荐配置（使用 AstrBot 原生提供商）
 
-在插件配置页中设置以下项以获得最佳检索效果：
+先在 AstrBot 的“服务提供商”页面完成模型接入，再在插件配置页中选择提供商 ID：
 
 | 配置项 | 值 | 说明 |
 |---|---|---|
-| `embedding.enabled` | `true` | 启用远程 embedding |
-| `embedding.openapi.base_url` | 你的 API 地址 | OpenAI 兼容端点，可不带 `/v1` |
-| `embedding.openapi.api_key` | 你的 API Key | - |
-| `embedding.openapi.model` | `text-embedding-3-large` | Embedding 模型 |
-| `embedding.openapi.chat_model` | `gpt-4o` | 用于总结和画像生成 |
+| `embedding.enabled` | `true` | 启用 Embedding Provider |
+| `provider.embedding_provider_id` | 你的 Embedding Provider | 用于向量化检索 |
+| `provider.chat_provider_id` | 你的 Chat Provider | 用于总结导入 |
 
 ## 命令参考
 
@@ -167,20 +165,21 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `ingest.record_all_events` | bool | `true` | 是否记录所有消息事件 |
 | `ingest.skip_empty_text` | bool | `true` | 忽略空文本消息 |
 
+### 提供商（provider）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `provider.embedding_provider_id` | string | `""` | AstrBot Embedding Provider ID |
+| `provider.chat_provider_id` | string | `""` | AstrBot Chat Provider ID（用于总结导入） |
+
 ### Embedding
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `embedding.enabled` | bool | `false` | 启用远程 embedding |
+| `embedding.enabled` | bool | `false` | 启用 Embedding Provider（关闭则本地回退） |
 | `embedding.dimension` | int | `1024` | 向量维度 |
 | `embedding.batch_size` | int | `32` | 批量请求大小 |
 | `embedding.max_concurrent` | int | `5` | 最大并发请求数 |
-| `embedding.openapi.base_url` | string | `""` | API 地址（可不带 `/v1`） |
-| `embedding.openapi.api_key` | string | `""` | API Key |
-| `embedding.openapi.model` | string | `text-embedding-3-large` | Embedding 模型 |
-| `embedding.openapi.chat_model` | string | `gpt-4o` | Summary / Profile 模型 |
-| `embedding.openapi.timeout_seconds` | int | `30` | 请求超时（秒） |
-| `embedding.openapi.max_retries` | int | `3` | 最大重试次数 |
 
 ### 检索（retrieval）
 
@@ -217,7 +216,6 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `summarization.enabled` | bool | `true` | 启用总结导入 |
-| `summarization.model_name` | string | `auto` | 总结模型（`auto` 使用 chat_model） |
 | `summarization.context_length` | int | `50` | 总结上下文长度 |
 | `summarization.default_knowledge_type` | string | `narrative` | 总结知识类型（narrative / factual / mixed / structured / auto） |
 
@@ -252,9 +250,9 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 ## 常见问题
 
 <details>
-<summary>没有配置 Embedding API 能用吗？</summary>
+<summary>没有配置 Embedding Provider 能用吗？</summary>
 
-可以。`embedding.enabled=false`（默认值）时，插件使用本地确定性向量回退，所有功能正常加载。配置 Embedding API 后检索效果会显著提升。
+可以。`embedding.enabled=false`（默认值）时，插件使用本地确定性向量回退，所有功能正常加载。配置 Embedding Provider 后检索效果会显著提升。
 
 </details>
 

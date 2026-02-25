@@ -23,20 +23,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "cors": {"allow_origins": []},
     "storage": {"data_dir": "./data"},
+    "provider": {
+        "chat_provider_id": "",
+        "embedding_provider_id": "",
+    },
     "embedding": {
         "dimension": 1024,
         "quantization_type": "int8",
         "batch_size": 32,
         "max_concurrent": 5,
-        "model_name": "auto",
         "retry": {"max_attempts": 5, "max_wait_seconds": 30, "min_wait_seconds": 2},
-        "openai": {
-            "base_url": "https://api.openai.com/v1",
-            "api_key": "",
-            "model": "text-embedding-3-large",
-            "timeout_seconds": 30,
-            "max_retries": 3,
-        },
     },
     "retrieval": {
         "top_k_relations": 10,
@@ -117,7 +113,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "summarization": {
         "enabled": True,
-        "model_name": "auto",
         "context_length": 50,
         "include_personality": True,
         "default_knowledge_type": "narrative",
