@@ -200,6 +200,7 @@ class MemorixPlugin(Star):
             user_id=adapted.sender_id,
             group_id=adapted.group_id,
             platform=adapted.platform,
+            unified_msg_origin=adapted.unified_msg_origin,
             time_meta={"event_time": adapted.timestamp} if adapted.timestamp else None,
         )
         logger.debug(

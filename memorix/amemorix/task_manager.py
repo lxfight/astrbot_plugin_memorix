@@ -235,6 +235,7 @@ class TaskManager:
             return
 
         context_length = max(1, int(self.ctx.get_config("summarization.context_length", 50) or 50))
+        source_mode = str(self.ctx.get_config("summarization.source_mode", "hybrid") or "hybrid").strip().lower()
         cursor = conn.cursor()
         cursor.execute(
             """
@@ -273,10 +274,12 @@ class TaskManager:
                 skipped_count += 1
                 continue
 
-            messages = self.ctx.metadata_store.get_transcript_messages(session_id, limit=context_length)
-            if not messages:
-                skipped_count += 1
-                continue
+            messages = []
+            if source_mode == "transcript":
+                messages = self.ctx.metadata_store.get_transcript_messages(session_id, limit=context_length)
+                if not messages:
+                    skipped_count += 1
+                    continue
 
             try:
                 result = await self.summary_service.import_from_transcript(

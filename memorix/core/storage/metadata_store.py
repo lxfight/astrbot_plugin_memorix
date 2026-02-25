@@ -3362,6 +3362,36 @@ class MetadataStore:
         self._conn.commit()
         return count
 
+    def get_transcript_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        if not session_id:
+            return None
+        cursor = self._conn.cursor()
+        cursor.execute(
+            """
+            SELECT session_id, source, metadata, created_at, updated_at
+            FROM transcript_sessions
+            WHERE session_id = ?
+            LIMIT 1
+            """,
+            (str(session_id),),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        metadata_obj = {}
+        if row[2]:
+            try:
+                metadata_obj = json.loads(row[2])
+            except Exception:
+                metadata_obj = {}
+        return {
+            "session_id": str(row[0] or ""),
+            "source": str(row[1] or ""),
+            "metadata": metadata_obj if isinstance(metadata_obj, dict) else {},
+            "created_at": row[3],
+            "updated_at": row[4],
+        }
+
     def get_transcript_messages(self, session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         if not session_id:
             return []
@@ -3577,4 +3607,3 @@ class MetadataStore:
         if self.data_dir is None:
             return False
         return (self.data_dir / self.db_name).exists()
-

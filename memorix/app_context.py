@@ -176,6 +176,7 @@ class ScopeRuntimeManager:
             settings = AppSettings(config=cfg)
             logger.info("create runtime: scope=%s data_dir=%s", key, settings.data_dir)
             ctx = build_context(settings)
+            ctx.astrbot_context = self.astrbot_context
             provider_bridge = self._build_provider_bridge()
             ctx.provider_bridge = provider_bridge
             task_manager = TaskManager(ctx)

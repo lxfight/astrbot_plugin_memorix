@@ -263,6 +263,12 @@
         "description": "启用总结导入",
         "default": true
       },
+      "source_mode": {
+        "type": "string",
+        "description": "总结消息来源：transcript=仅插件转录；astrbot=仅 AstrBot 会话历史；hybrid=优先 AstrBot，失败回退 transcript",
+        "default": "hybrid",
+        "options": ["transcript", "astrbot", "hybrid"]
+      },
       "context_length": {
         "type": "int",
         "description": "总结上下文长度",

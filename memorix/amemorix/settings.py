@@ -125,6 +125,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "summarization": {
         "enabled": True,
+        "source_mode": "hybrid",
         "context_length": 50,
         "include_personality": True,
         "default_knowledge_type": "narrative",

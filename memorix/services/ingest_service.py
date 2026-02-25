@@ -99,6 +99,7 @@ class IngestService:
         user_id: str = "",
         group_id: str = "",
         platform: str = "",
+        unified_msg_origin: str = "",
         time_meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         text = str(content or "").strip()
@@ -117,6 +118,7 @@ class IngestService:
                 "user_id": str(user_id or "").strip(),
                 "group_id": str(group_id or "").strip(),
                 "platform": str(platform or "").strip(),
+                "unified_msg_origin": str(unified_msg_origin or "").strip(),
             },
         )
         ctx.metadata_store.append_transcript_messages(
