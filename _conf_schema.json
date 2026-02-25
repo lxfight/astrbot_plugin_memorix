@@ -27,6 +27,19 @@
       }
     }
   },
+  "provider": {
+    "type": "object",
+    "description": "AstrBot 模型提供商选择",
+    "items": {
+      "chat_provider_id": {
+        "type": "string",
+        "description": "可选：指定用于总结/画像生成的聊天模型 Provider ID（优先于当前会话 provider）",
+        "default": "",
+        "_special": "select_provider",
+        "obvious_hint": true
+      }
+    }
+  },
   "embedding": {
     "type": "object",
     "description": "向量配置（插件内 OpenAI-compatible Embedding）",

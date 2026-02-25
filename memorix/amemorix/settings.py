@@ -22,6 +22,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "cors": {"allow_origins": []},
     "storage": {"data_dir": "./data"},
+    "provider": {
+        "chat_provider_id": "",
+    },
     "embedding": {
         "enabled": False,
         "dimension": 1024,

@@ -90,10 +90,11 @@ https://github.com/exynos967/astrbot_plugin_memorix
 
 ### 推荐配置（启用独立 Embedding）
 
-聊天模型由 AstrBot 会话提供商直接提供；Embedding 在插件内独立配置 OpenAI-compatible 端点：
+聊天模型可选指定 AstrBot 已定义 Provider；Embedding 在插件内独立配置 OpenAI-compatible 端点：
 
 | 配置项 | 值 | 说明 |
 |---|---|---|
+| `provider.chat_provider_id` | AstrBot 中的聊天 Provider ID（可选） | 指定后优先使用该模型做总结/画像 |
 | `embedding.enabled` | `true` | 启用远程向量化 |
 | `embedding.openapi.base_url` | 你的 Embedding API 地址 | 支持不带 `/v1`，插件会自动补全 |
 | `embedding.openapi.api_key` | 你的 API Key | 远程鉴权 |
@@ -167,7 +168,11 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `ingest.record_all_events` | bool | `true` | 是否记录所有消息事件 |
 | `ingest.skip_empty_text` | bool | `true` | 忽略空文本消息 |
 
-聊天模型说明：总结导入会跟随 AstrBot 当前会话使用的聊天模型，不需要在插件里单独配置。
+### 提供商（provider）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `provider.chat_provider_id` | string | `""` | 可选指定 AstrBot 聊天 Provider；为空时回退当前会话 provider |
 
 ### Embedding
 

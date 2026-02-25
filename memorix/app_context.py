@@ -140,10 +140,13 @@ class ScopeRuntimeManager:
     def _build_provider_bridge(self) -> Optional[AstrBotProviderBridge]:
         if self.astrbot_context is None:
             return None
+        provider_cfg = self.plugin_config.get("provider", {})
+        if not isinstance(provider_cfg, dict):
+            provider_cfg = {}
         return AstrBotProviderBridge(
             astrbot_context=self.astrbot_context,
-            # 聊天模型跟随 AstrBot 当前会话，不由插件独立配置。
-            chat_provider_id="",
+            # 聊天模型可选 AstrBot 中已定义 provider（配置优先）。
+            chat_provider_id=str(provider_cfg.get("chat_provider_id", "") or ""),
             embedding_provider_id="",
         )
 
