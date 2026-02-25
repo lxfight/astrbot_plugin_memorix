@@ -22,6 +22,7 @@ from ..retrieval import (
 )
 from ..storage import GraphStore, MetadataStore, VectorStore
 
+
 class PersonProfileService:
     def __init__(
         self,
@@ -217,8 +218,59 @@ class PersonProfileService:
             )
         return edges
 
+    @staticmethod
+    def _normalize_aliases(aliases: List[str]) -> List[str]:
+        normalized: List[str] = []
+        seen = set()
+        for alias in aliases:
+            text = str(alias or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            normalized.append(text)
+        normalized.sort(key=len, reverse=True)
+        return normalized
+
+    @staticmethod
+    def _text_matches_alias(value: str, aliases: List[str]) -> bool:
+        text = str(value or "").strip()
+        if not text:
+            return False
+        lowered = text.lower()
+        for alias in aliases:
+            target = alias.lower()
+            if len(target) <= 1:
+                if lowered == target:
+                    return True
+                continue
+            if target in lowered:
+                return True
+        return False
+
+    def _is_person_related_vector_item(self, item: Dict[str, Any], aliases: List[str]) -> bool:
+        if not aliases:
+            return False
+
+        if self._text_matches_alias(str(item.get("content", "") or ""), aliases):
+            return True
+
+        metadata = item.get("metadata", {}) or {}
+        if not isinstance(metadata, dict):
+            return False
+
+        for key in ("subject", "object", "predicate", "entity", "pivot_entity"):
+            if self._text_matches_alias(str(metadata.get(key, "") or ""), aliases):
+                return True
+
+        entities = metadata.get("entities")
+        if isinstance(entities, list):
+            for entity in entities:
+                if self._text_matches_alias(str(entity or ""), aliases):
+                    return True
+        return False
+
     async def _collect_vector_evidence(self, aliases: List[str], top_k: int = 12) -> List[Dict[str, Any]]:
-        alias_queries = [a for a in aliases if a]
+        alias_queries = self._normalize_aliases([a for a in aliases if a])
         if not alias_queries:
             return []
 
@@ -265,8 +317,9 @@ class PersonProfileService:
                         "metadata": dict(getattr(item, "metadata", {}) or {}),
                     }
                 )
-        evidence.sort(key=lambda x: x.get("score", 0.0), reverse=True)
-        return evidence[:top_k]
+        filtered = [item for item in evidence if self._is_person_related_vector_item(item, alias_queries)]
+        filtered.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+        return filtered[:top_k]
 
     def _build_profile_text(
         self,
