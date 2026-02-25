@@ -50,6 +50,15 @@ def _extract_provider_id(provider: Any) -> str:
     return ""
 
 
+def _is_embedding_capable_provider(provider: Any) -> bool:
+    if provider is None:
+        return False
+    return bool(
+        callable(getattr(provider, "get_embeddings", None))
+        or callable(getattr(provider, "get_embedding", None))
+    )
+
+
 def _extract_completion_text(resp: Any) -> str:
     if resp is None:
         return ""
@@ -155,22 +164,41 @@ class AstrBotProviderBridge:
         candidate: Any = None
         pid = self.embedding_provider_id
 
-        get_by_id = getattr(ctx, "get_provider_by_id", None)
-        if pid and callable(get_by_id):
+        list_all = getattr(ctx, "get_all_embedding_providers", None)
+        providers: List[Any] = []
+        if callable(list_all):
             try:
-                candidate = await _invoke_maybe_async(get_by_id, pid)
+                raw = await _invoke_maybe_async(list_all)
+                if isinstance(raw, list):
+                    providers = raw
+            except Exception as exc:
+                logger.warning("list embedding providers failed: %s", exc)
+
+        if pid and providers:
+            for provider in providers:
+                if _extract_provider_id(provider) == pid and _is_embedding_capable_provider(provider):
+                    candidate = provider
+                    break
+
+        get_by_id = getattr(ctx, "get_provider_by_id", None)
+        if candidate is None and pid and callable(get_by_id):
+            try:
+                selected = await _invoke_maybe_async(get_by_id, pid)
+                if _is_embedding_capable_provider(selected):
+                    candidate = selected
+                else:
+                    logger.warning(
+                        "configured embedding_provider_id points to non-embedding provider: provider_id=%s",
+                        pid,
+                    )
             except Exception as exc:
                 logger.warning("load embedding provider by id failed: provider_id=%s err=%s", pid, exc)
 
-        if candidate is None:
-            list_all = getattr(ctx, "get_all_embedding_providers", None)
-            if callable(list_all):
-                try:
-                    providers = await _invoke_maybe_async(list_all)
-                    if isinstance(providers, list) and providers:
-                        candidate = providers[0]
-                except Exception as exc:
-                    logger.warning("list embedding providers failed: %s", exc)
+        if candidate is None and providers:
+            for provider in providers:
+                if _is_embedding_capable_provider(provider):
+                    candidate = provider
+                    break
 
         if candidate is not None:
             self._cached_embedding_provider = candidate
