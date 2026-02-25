@@ -27,26 +27,13 @@
       }
     }
   },
-  "provider": {
-    "type": "object",
-    "description": "AstrBot 原生模型提供商选择",
-    "items": {
-      "embedding_provider_id": {
-        "type": "string",
-        "description": "Embedding 提供商 ID（用于向量化检索）",
-        "default": "",
-        "_special": "select_provider",
-        "obvious_hint": true
-      }
-    }
-  },
   "embedding": {
     "type": "object",
-    "description": "向量配置（由 AstrBot Embedding Provider 执行）",
+    "description": "向量配置（插件内 OpenAI-compatible Embedding）",
     "items": {
       "enabled": {
         "type": "bool",
-        "description": "启用 AstrBot Embedding Provider；关闭时使用本地确定性向量回退",
+        "description": "启用插件内 embedding；关闭时使用本地确定性向量回退",
         "default": false,
         "obvious_hint": true
       },
@@ -64,6 +51,37 @@
         "type": "int",
         "description": "并发请求数",
         "default": 5
+      },
+      "openapi": {
+        "type": "object",
+        "description": "OpenAI-compatible Embedding 端点",
+        "items": {
+          "base_url": {
+            "type": "string",
+            "description": "Embedding API Base URL（可不带 /v1，插件会自动补全）",
+            "default": ""
+          },
+          "api_key": {
+            "type": "string",
+            "description": "Embedding API Key",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "description": "Embedding 模型名（不填则使用服务端默认）",
+            "default": ""
+          },
+          "timeout_seconds": {
+            "type": "float",
+            "description": "请求超时（秒）",
+            "default": 30.0
+          },
+          "max_retries": {
+            "type": "int",
+            "description": "请求重试次数",
+            "default": 3
+          }
+        }
       }
     }
   },

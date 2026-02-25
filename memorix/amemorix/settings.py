@@ -22,15 +22,20 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "cors": {"allow_origins": []},
     "storage": {"data_dir": "./data"},
-    "provider": {
-        "embedding_provider_id": "",
-    },
     "embedding": {
+        "enabled": False,
         "dimension": 1024,
         "quantization_type": "int8",
         "batch_size": 32,
         "max_concurrent": 5,
         "retry": {"max_attempts": 5, "max_wait_seconds": 30, "min_wait_seconds": 2},
+        "openapi": {
+            "base_url": "",
+            "api_key": "",
+            "model": "",
+            "timeout_seconds": 30,
+            "max_retries": 3,
+        },
     },
     "retrieval": {
         "top_k_relations": 10,

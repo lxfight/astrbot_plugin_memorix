@@ -88,14 +88,16 @@ https://github.com/exynos967/astrbot_plugin_memorix
 
 插件安装后**无需任何配置**即可启动。默认使用本地 embedding 回退，所有功能可用。
 
-### 推荐配置（使用 AstrBot 原生提供商）
+### 推荐配置（启用独立 Embedding）
 
-先在 AstrBot 的“服务提供商”页面完成模型接入，再在插件配置页中选择提供商 ID：
+聊天模型由 AstrBot 会话提供商直接提供；Embedding 在插件内独立配置 OpenAI-compatible 端点：
 
 | 配置项 | 值 | 说明 |
 |---|---|---|
-| `embedding.enabled` | `true` | 启用 Embedding Provider |
-| `provider.embedding_provider_id` | 你的 Embedding Provider | 用于向量化检索 |
+| `embedding.enabled` | `true` | 启用远程向量化 |
+| `embedding.openapi.base_url` | 你的 Embedding API 地址 | 支持不带 `/v1`，插件会自动补全 |
+| `embedding.openapi.api_key` | 你的 API Key | 远程鉴权 |
+| `embedding.openapi.model` | 你的 Embedding 模型名 | 如 `text-embedding-3-large` |
 
 ## 命令参考
 
@@ -165,22 +167,21 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `ingest.record_all_events` | bool | `true` | 是否记录所有消息事件 |
 | `ingest.skip_empty_text` | bool | `true` | 忽略空文本消息 |
 
-### 提供商（provider）
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|---|---|---|---|
-| `provider.embedding_provider_id` | string | `""` | AstrBot Embedding Provider ID |
-
 聊天模型说明：总结导入会跟随 AstrBot 当前会话使用的聊天模型，不需要在插件里单独配置。
 
 ### Embedding
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `embedding.enabled` | bool | `false` | 启用 Embedding Provider（关闭则本地回退） |
+| `embedding.enabled` | bool | `false` | 启用插件内 OpenAI-compatible embedding（关闭则本地回退） |
 | `embedding.dimension` | int | `1024` | 向量维度 |
 | `embedding.batch_size` | int | `32` | 批量请求大小 |
 | `embedding.max_concurrent` | int | `5` | 最大并发请求数 |
+| `embedding.openapi.base_url` | string | `""` | Embedding API Base URL（可不带 `/v1`） |
+| `embedding.openapi.api_key` | string | `""` | Embedding API Key |
+| `embedding.openapi.model` | string | `""` | Embedding 模型名（空为服务端默认） |
+| `embedding.openapi.timeout_seconds` | float | `30` | Embedding 请求超时（秒） |
+| `embedding.openapi.max_retries` | int | `3` | Embedding 请求重试次数 |
 
 ### 检索（retrieval）
 
@@ -253,14 +254,14 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `fastapi` + `uvicorn` | 内嵌 WebUI 服务 |
 | `pydantic` | 数据校验 |
 | `jieba` | 中文分词（BM25 检索） |
-| `openai` | OpenAI 兼容兜底客户端（正常走 AstrBot Provider 时无需手动配置） |
+| `openai` | OpenAI-compatible Embedding 客户端 |
 
 ## 常见问题
 
 <details>
-<summary>没有配置 Embedding Provider 能用吗？</summary>
+<summary>没有配置 Embedding API 能用吗？</summary>
 
-可以。`embedding.enabled=false`（默认值）时，插件使用本地确定性向量回退，所有功能正常加载。配置 Embedding Provider 后检索效果会显著提升。
+可以。`embedding.enabled=false`（默认值）时，插件使用本地确定性向量回退，所有功能正常加载。配置 `embedding.openapi` 后检索效果会显著提升。
 
 </details>
 

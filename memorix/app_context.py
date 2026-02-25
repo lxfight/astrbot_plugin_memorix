@@ -17,7 +17,7 @@ from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 from .amemorix.bootstrap import build_context
 from .amemorix.settings import DEFAULT_CONFIG, AppSettings
 from .amemorix.task_manager import TaskManager
-from .providers import AstrBotEmbeddingAdapter, AstrBotProviderBridge
+from .providers import AstrBotProviderBridge
 
 _SCOPE_DIR_PATTERN = re.compile(r"[^0-9A-Za-z._-]+")
 
@@ -64,6 +64,7 @@ class LocalEmbeddingAdapter:
         if norm > 0:
             vec = vec / norm
         return vec.astype(np.float32)
+
 
 @dataclass(slots=True)
 class ScopeRuntime:
@@ -139,14 +140,11 @@ class ScopeRuntimeManager:
     def _build_provider_bridge(self) -> Optional[AstrBotProviderBridge]:
         if self.astrbot_context is None:
             return None
-        provider_cfg = self.plugin_config.get("provider", {})
-        if not isinstance(provider_cfg, dict):
-            provider_cfg = {}
         return AstrBotProviderBridge(
             astrbot_context=self.astrbot_context,
             # 聊天模型跟随 AstrBot 当前会话，不由插件独立配置。
             chat_provider_id="",
-            embedding_provider_id=str(provider_cfg.get("embedding_provider_id", "") or ""),
+            embedding_provider_id="",
         )
 
     def _patch_local_embedding(self, runtime: ScopeRuntime) -> None:
@@ -157,51 +155,6 @@ class ScopeRuntimeManager:
         if hasattr(runtime.context, "person_profile_service"):
             runtime.context.person_profile_service.embedding_manager = adapter
         logger.info("local embedding fallback enabled: scope=%s dim=%s", runtime.scope_key, dimension)
-
-    async def _patch_astrbot_embedding(
-        self,
-        runtime: ScopeRuntime,
-        provider_bridge: Optional[AstrBotProviderBridge],
-    ) -> bool:
-        if provider_bridge is None:
-            return False
-
-        provider = await provider_bridge.get_embedding_provider()
-        if provider is None:
-            return False
-        if not (
-            callable(getattr(provider, "get_embeddings", None))
-            or callable(getattr(provider, "get_embedding", None))
-        ):
-            logger.warning(
-                "selected provider is not an embedding provider: scope=%s provider_id=%s",
-                runtime.scope_key,
-                await provider_bridge.get_embedding_provider_id() or "<unknown>",
-            )
-            return False
-
-        dimension = int(runtime.settings.get("embedding.dimension", 1024) or 1024)
-        batch_size = int(runtime.settings.get("embedding.batch_size", 32) or 32)
-        max_retries = int(runtime.settings.get("embedding.retry.max_attempts", 3) or 3)
-        adapter = AstrBotEmbeddingAdapter(
-            provider_bridge=provider_bridge,
-            default_dimension=dimension,
-            batch_size=batch_size,
-            max_retries=max_retries,
-        )
-        runtime.context.embedding_manager = adapter
-        runtime.context.retriever.embedding_manager = adapter
-        if hasattr(runtime.context, "person_profile_service"):
-            runtime.context.person_profile_service.embedding_manager = adapter
-
-        pid = await provider_bridge.get_embedding_provider_id()
-        logger.info(
-            "astrbot embedding provider enabled: scope=%s provider_id=%s dim=%s",
-            runtime.scope_key,
-            pid or "<auto>",
-            dimension,
-        )
-        return True
 
     async def get_runtime(self, scope_key: str) -> ScopeRuntime:
         key = str(scope_key or "default")
@@ -227,19 +180,23 @@ class ScopeRuntimeManager:
 
             embedding_enabled = bool(settings.get("embedding.enabled", False))
             if embedding_enabled:
-                use_provider = await self._patch_astrbot_embedding(runtime, provider_bridge)
-                if not use_provider:
-                    logger.warning(
-                        "embedding enabled but no AstrBot embedding provider available, fallback local: scope=%s",
-                        key,
-                    )
-                    self._patch_local_embedding(runtime)
+                endpoint_cfg = settings.get_openapi_endpoint_config()
+                logger.info(
+                    "openapi embedding enabled: scope=%s base_url=%s model=%s",
+                    key,
+                    str(endpoint_cfg.get("base_url", "") or "<default>"),
+                    str(endpoint_cfg.get("model", "") or "<default>"),
+                )
             else:
                 self._patch_local_embedding(runtime)
 
             await task_manager.start()
             self._runtimes[key] = runtime
-            logger.info("runtime ready: scope=%s embedding_enabled=%s", key, embedding_enabled)
+            logger.info(
+                "runtime ready: scope=%s embedding_mode=%s",
+                key,
+                "openapi" if embedding_enabled else "local-fallback",
+            )
             return runtime
 
     def get_known_scopes(self) -> list[str]:
