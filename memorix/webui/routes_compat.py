@@ -208,11 +208,21 @@ class MemorixServer:
                            degrees[e['from']] = degrees.get(e['from'], 0) + 1
                            degrees[e['to']] = degrees.get(e['to'], 0) + 1
                        
-                       # 过滤掉局部度数为 1 的节点
-                       nodes = [n for n in nodes if degrees.get(n['id'], 0) != 1]
-                       node_ids = set(n['id'] for n in nodes)
-                       # 只保留连接两个已存在节点的边
-                       edges = [e for e in edges if e['from'] in node_ids and e['to'] in node_ids]
+                       # 过滤掉局部度数为 1 的节点。
+                       # 若过滤后会导致整图为空，则回退保留原始子图，避免 WebUI 显示空白。
+                       filtered_nodes = [n for n in nodes if degrees.get(n['id'], 0) != 1]
+                       if filtered_nodes:
+                           node_ids = {n['id'] for n in filtered_nodes}
+                           filtered_edges = [e for e in edges if e['from'] in node_ids and e['to'] in node_ids]
+                           nodes = filtered_nodes
+                           edges = filtered_edges
+                       else:
+                           logger.info(
+                               "source graph leaf-prune skipped to avoid empty graph: source=%s nodes=%s edges=%s",
+                               source,
+                               len(nodes),
+                               len(edges),
+                           )
 
                     return {
                         "nodes": nodes, 

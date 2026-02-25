@@ -46,6 +46,13 @@ class EmbeddedWebUIServer:
             except OSError:
                 return False
 
+    @staticmethod
+    def _display_host(host: str) -> str:
+        normalized = str(host or "").strip().lower()
+        if normalized in {"0.0.0.0", "::", "[::]"}:
+            return "127.0.0.1"
+        return str(host or "").strip() or "127.0.0.1"
+
     def _pick_port(self, host: str, start_port: int, tries: int) -> int:
         for idx in range(max(1, int(tries))):
             candidate = int(start_port) + idx
@@ -76,6 +83,7 @@ class EmbeddedWebUIServer:
         start_port = int(self._cfg("webui.port", 8092) or 8092)
         max_tries = int(self._cfg("webui.port_fallback_max_tries", 20) or 20)
         port = self._pick_port(host, start_port, max_tries)
+        display_host = self._display_host(host)
 
         server = MemorixServer(plugin_instance=runtime.context, host=host, port=port)
         server.app.state.context = runtime.context
@@ -90,10 +98,12 @@ class EmbeddedWebUIServer:
             scope_key=scope_key,
             host=host,
             port=port,
-            url=f"http://{host}:{port}",
+            url=f"http://{display_host}:{port}",
         )
         logger.info(
-            "webui started: url=%s scope=%s auth_enabled=%s",
+            "webui started: bind=%s:%s url=%s scope=%s auth_enabled=%s",
+            host,
+            port,
             self.state.url,
             self.state.scope_key,
             auth_enabled,
