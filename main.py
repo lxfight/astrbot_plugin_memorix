@@ -536,7 +536,7 @@ class MemorixPlugin(Star):
             return
         self._log_cmd(event, "ui")
         try:
-            desired_scope = self._resolve_webui_scope(event)
+            desired_scope = self._resolve_scope(event)
             if self.webui_server.state.url and self.webui_server.state.scope_key != desired_scope:
                 logger.info(
                     "[memorix] switching webui scope: from=%s to=%s",
