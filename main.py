@@ -84,6 +84,70 @@ class MemorixPlugin(Star):
         return bool(current)
 
     @staticmethod
+    def _normalize_command_prefixes(raw: Any) -> list[str]:
+        values: list[str] = []
+        if isinstance(raw, str):
+            values = [raw]
+        elif isinstance(raw, (list, tuple, set)):
+            values = [str(item or "") for item in raw]
+
+        normalized: list[str] = []
+        seen = set()
+        for item in values:
+            prefix = str(item or "").strip()
+            if not prefix or prefix in seen:
+                continue
+            seen.add(prefix)
+            normalized.append(prefix)
+        return normalized or ["/"]
+
+    @staticmethod
+    def _strip_leading_mentions(text: str) -> str:
+        current = str(text or "").lstrip()
+        while True:
+            changed = False
+            if current.startswith("@"):
+                parts = current.split(maxsplit=1)
+                if len(parts) == 2:
+                    current = parts[1].lstrip()
+                    changed = True
+            elif current.startswith("[CQ:at,"):
+                idx = current.find("]")
+                if idx > 0:
+                    current = current[idx + 1 :].lstrip()
+                    changed = True
+            if not changed:
+                break
+        return current
+
+    def _is_command_message(self, text: str) -> bool:
+        ingest_cfg = self.config.get("ingest", {}) if isinstance(self.config.get("ingest"), dict) else {}
+        prefixes_raw: Any = ingest_cfg.get("command_prefixes", ["/"])
+        if "command_prefixes" not in ingest_cfg and "command_prefix" in ingest_cfg:
+            prefixes_raw = ingest_cfg.get("command_prefix")
+        prefixes = self._normalize_command_prefixes(prefixes_raw)
+        content = str(text or "").lstrip()
+        if not content:
+            return False
+        candidates = [content]
+        mention_stripped = self._strip_leading_mentions(content)
+        if mention_stripped and mention_stripped != content:
+            candidates.append(mention_stripped)
+
+        for candidate in candidates:
+            for prefix in prefixes:
+                if not candidate.startswith(prefix):
+                    continue
+                if len(candidate) == len(prefix):
+                    return True
+                if prefix[-1].isalnum():
+                    next_char = candidate[len(prefix) : len(prefix) + 1]
+                    if next_char and (next_char.isalnum() or next_char == "_"):
+                        continue
+                return True
+        return False
+
+    @staticmethod
     def _parse_tail(raw_text: str, sub_cmd: str) -> str:
         text = str(raw_text or "").strip()
         if text.startswith("/"):
@@ -219,7 +283,7 @@ class MemorixPlugin(Star):
         if not text and self._bool_cfg(self.config, "ingest.skip_empty_text", True):
             logger.debug("[memorix] skip empty message %s", self._event_ctx_text(event))
             return
-        if text.startswith("/") and self._bool_cfg(self.config, "ingest.skip_command_messages", True):
+        if self._bool_cfg(self.config, "ingest.skip_command_messages", True) and self._is_command_message(text):
             logger.debug("[memorix] skip command message %s", self._event_ctx_text(event))
             return
         try:

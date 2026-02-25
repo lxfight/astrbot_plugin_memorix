@@ -27,8 +27,18 @@
       },
       "skip_command_messages": {
         "type": "bool",
-        "description": "忽略以 / 开头的命令消息，减少记忆噪声",
+        "description": "忽略命令消息，减少记忆噪声（按 command_prefixes 判断）",
         "default": true
+      },
+      "command_prefixes": {
+        "type": "list",
+        "description": "命令前缀列表（如 [\"/\", \"!\", \".\"]）；支持消息前置 @机器人 后再判断前缀",
+        "default": ["/"]
+      },
+      "command_prefix": {
+        "type": "string",
+        "description": "兼容旧配置：单个命令前缀（当未设置 command_prefixes 时生效）",
+        "default": "/"
       }
     }
   },

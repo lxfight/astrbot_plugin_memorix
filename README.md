@@ -167,7 +167,8 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 |---|---|---|---|
 | `ingest.record_all_events` | bool | `true` | 是否记录所有消息事件 |
 | `ingest.skip_empty_text` | bool | `true` | 忽略空文本消息 |
-| `ingest.skip_command_messages` | bool | `true` | 忽略以 `/` 开头的命令消息 |
+| `ingest.skip_command_messages` | bool | `true` | 忽略命令消息（按 `command_prefixes` 判断） |
+| `ingest.command_prefixes` | list | `["/"]` | 命令前缀列表（支持自定义前缀，如 `["/", "!", "."]`） |
 
 ### 提供商（provider）
 
