@@ -229,7 +229,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `webui.host` | string | `0.0.0.0` | 监听地址 |
 | `webui.port` | int | `8092` | 监听端口 |
 | `webui.port_fallback_max_tries` | int | `20` | 端口冲突回退尝试次数 |
-| `webui.scope` | string | `aiocqhttp` | WebUI 绑定作用域 |
+| `webui.scope` | string | `auto` | WebUI 绑定作用域，`auto` 跟随当前会话作用域 |
 | `webui.auth.enabled` | bool | `false` | 启用 Bearer 鉴权 |
 | `webui.auth.write_tokens` | list | `[]` | 写接口 Token 列表 |
 | `webui.auth.read_tokens` | list | `[]` | 读接口 Token 列表 |

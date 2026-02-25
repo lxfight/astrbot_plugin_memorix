@@ -37,7 +37,7 @@ class MemorixPlugin(Star):
         logger.info("[memorix] initialize start")
         if bool(self.config.get("webui", {}).get("enabled", True)):
             try:
-                ui_scope = str(self.config.get("webui", {}).get("scope", "aiocqhttp") or "aiocqhttp")
+                ui_scope = self._resolve_webui_scope()
                 state = await self.webui_server.start(scope_key=ui_scope)
                 if state.url:
                     logger.info("[memorix] WebUI started at %s (scope=%s)", state.url, state.scope_key)
@@ -56,6 +56,18 @@ class MemorixPlugin(Star):
 
     def _resolve_scope(self, event: AstrMessageEvent) -> str:
         return self.scope_router.resolve(event)
+
+    def _resolve_webui_scope(self, event: Optional[AstrMessageEvent] = None) -> str:
+        configured = str(self.config.get("webui", {}).get("scope", "auto") or "auto").strip()
+        mode = configured.lower()
+        if mode not in {"", "auto", "current", "event"}:
+            return configured
+        if event is not None:
+            return self._resolve_scope(event)
+        known_scopes = self.runtime_manager.get_known_scopes()
+        if known_scopes:
+            return str(known_scopes[-1])
+        return "aiocqhttp"
 
     @staticmethod
     def _bool_cfg(config: Dict[str, Any], key: str, default: bool) -> bool:
@@ -524,13 +536,23 @@ class MemorixPlugin(Star):
             return
         self._log_cmd(event, "ui")
         try:
+            desired_scope = self._resolve_webui_scope(event)
+            if self.webui_server.state.url and self.webui_server.state.scope_key != desired_scope:
+                logger.info(
+                    "[memorix] switching webui scope: from=%s to=%s",
+                    self.webui_server.state.scope_key,
+                    desired_scope,
+                )
+                self.webui_server.stop()
+
             if not self.webui_server.state.url:
-                ui_scope = str(self.config.get("webui", {}).get("scope", "aiocqhttp") or "aiocqhttp")
-                state = await self.webui_server.start(scope_key=ui_scope)
+                state = await self.webui_server.start(scope_key=desired_scope)
                 if not state.url:
                     yield event.plain_result("WebUI 启动失败")
                     return
-            yield event.plain_result(f"Memorix WebUI: {self.webui_server.state.url}")
+            yield event.plain_result(
+                f"Memorix WebUI: {self.webui_server.state.url} (scope={self.webui_server.state.scope_key})"
+            )
         except Exception as exc:
             logger.error("[memorix] mem ui failed: %s", exc, exc_info=True)
             yield event.plain_result(f"WebUI 启动失败: {exc}")

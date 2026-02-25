@@ -243,8 +243,8 @@
       },
       "scope": {
         "type": "string",
-        "description": "WebUI 绑定作用域（默认 aiocqhttp）",
-        "default": "aiocqhttp"
+        "description": "WebUI 绑定作用域。推荐 auto（跟随当前会话作用域）；也可手动指定如 aiocqhttp",
+        "default": "auto"
       },
       "auth": {
         "type": "object",

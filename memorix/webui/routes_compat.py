@@ -243,6 +243,44 @@ class MemorixServer:
                 raise HTTPException(status_code=503, detail="Graph store not initialized")
             
             node_names = self.plugin.graph_store.get_nodes()
+            if not node_names and self.plugin.metadata_store is not None:
+                try:
+                    registry = self.plugin.metadata_store.list_person_registry(page=1, page_size=300)
+                    items = registry.get("items", []) if isinstance(registry, dict) else []
+                    fallback_nodes: List[Dict[str, Any]] = []
+                    seen_ids = set()
+                    for item in items:
+                        pid = str(item.get("person_id", "")).strip()
+                        uid = str(item.get("user_id", "")).strip()
+                        node_id = pid or uid
+                        if not node_id or node_id in seen_ids:
+                            continue
+                        seen_ids.add(node_id)
+                        label = (
+                            str(item.get("person_name", "")).strip()
+                            or str(item.get("nickname", "")).strip()
+                            or uid
+                            or node_id
+                        )
+                        fallback_nodes.append(
+                            {
+                                "id": node_id,
+                                "label": label,
+                                "is_ghost": False,
+                            }
+                        )
+                    if fallback_nodes:
+                        return {
+                            "nodes": fallback_nodes,
+                            "edges": [],
+                            "debug": {
+                                "fallback": "person_registry",
+                                "nodes": len(fallback_nodes),
+                                "edges": 0,
+                            },
+                        }
+                except Exception as e:
+                    logger.warning(f"Build fallback graph from person_registry failed: {e}")
             
             # --- 智能显著性过滤 (Saliency Filtering) ---
             if exclude_leaf:
@@ -1068,6 +1106,19 @@ class MemorixServer:
                     force_refresh=bool(data.force_refresh),
                     source_note="webui:person_profile_query",
                 )
+                if not result.get("success", False):
+                    # 允许在未建立 registry 时用关键词直接生成临时画像快照。
+                    # 这样 WebUI 可先用昵称/关键词检索出画像，再逐步沉淀 registry。
+                    fallback_pid = str(data.person_keyword or "").strip()
+                    if fallback_pid:
+                        result = await service.query_person_profile(
+                            person_id=fallback_pid,
+                            person_keyword=fallback_pid,
+                            top_k=max(4, int(data.top_k or 12)),
+                            ttl_seconds=ttl_seconds,
+                            force_refresh=bool(data.force_refresh),
+                            source_note="webui:person_profile_query_fallback",
+                        )
                 if not result.get("success", False):
                     raise HTTPException(status_code=400, detail=result.get("error", "人物画像查询失败"))
                 return result
