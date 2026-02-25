@@ -149,9 +149,11 @@ class AstrBotProviderBridge:
         return ""
 
     async def resolve_chat_provider_id(self) -> str:
-        if self.chat_provider_id:
-            return self.chat_provider_id
-        return await self._pick_default_chat_provider_id()
+        # 聊天模型默认跟随 AstrBot 当前使用的 provider，不在插件侧主动切换。
+        default_id = await self._pick_default_chat_provider_id()
+        if default_id:
+            return default_id
+        return self.chat_provider_id
 
     async def get_embedding_provider(self) -> Any:
         if self._cached_embedding_provider is not None:

@@ -144,7 +144,8 @@ class ScopeRuntimeManager:
             provider_cfg = {}
         return AstrBotProviderBridge(
             astrbot_context=self.astrbot_context,
-            chat_provider_id=str(provider_cfg.get("chat_provider_id", "") or ""),
+            # 聊天模型跟随 AstrBot 当前会话，不由插件独立配置。
+            chat_provider_id="",
             embedding_provider_id=str(provider_cfg.get("embedding_provider_id", "") or ""),
         )
 

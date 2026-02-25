@@ -96,7 +96,6 @@ https://github.com/exynos967/astrbot_plugin_memorix
 |---|---|---|
 | `embedding.enabled` | `true` | 启用 Embedding Provider |
 | `provider.embedding_provider_id` | 你的 Embedding Provider | 用于向量化检索 |
-| `provider.chat_provider_id` | 你的 Chat Provider | 用于总结导入 |
 
 ## 命令参考
 
@@ -171,7 +170,8 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
 | `provider.embedding_provider_id` | string | `""` | AstrBot Embedding Provider ID |
-| `provider.chat_provider_id` | string | `""` | AstrBot Chat Provider ID（用于总结导入） |
+
+聊天模型说明：总结导入会跟随 AstrBot 当前会话使用的聊天模型，不需要在插件里单独配置。
 
 ### Embedding
 

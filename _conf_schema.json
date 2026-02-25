@@ -37,13 +37,6 @@
         "default": "",
         "_special": "select_provider",
         "obvious_hint": true
-      },
-      "chat_provider_id": {
-        "type": "string",
-        "description": "聊天提供商 ID（用于总结导入）",
-        "default": "",
-        "_special": "select_provider",
-        "obvious_hint": true
       }
     }
   },
