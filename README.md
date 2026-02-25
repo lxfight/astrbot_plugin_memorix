@@ -245,7 +245,7 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `fastapi` + `uvicorn` | 内嵌 WebUI 服务 |
 | `pydantic` | 数据校验 |
 | `jieba` | 中文分词（BM25 检索） |
-| `openai` | OpenAI 兼容 API 客户端 |
+| `openai` | OpenAI 兼容兜底客户端（正常走 AstrBot Provider 时无需手动配置） |
 
 ## 常见问题
 
