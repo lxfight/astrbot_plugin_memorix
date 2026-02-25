@@ -146,13 +146,15 @@ class TaskManager:
                 messages = payload.get("messages")
                 if not isinstance(messages, list):
                     messages = []
-                source = str(payload.get("source", f"summary:{session_id}"))
+                source = str(payload.get("source", f"chat_summary:{session_id}"))
                 context_length = int(payload.get("context_length", self.ctx.get_config("summarization.context_length", 50)))
+                persist_messages = bool(payload.get("persist_messages", False))
                 result = await self.summary_service.import_from_transcript(
                     session_id=session_id,
                     messages=messages,
                     source=source,
                     context_length=context_length,
+                    persist_messages=persist_messages,
                 )
                 status = TASK_STATUS_SUCCEEDED if result.get("success") else TASK_STATUS_FAILED
                 self.ctx.metadata_store.update_async_task(

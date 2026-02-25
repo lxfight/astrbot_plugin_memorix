@@ -47,7 +47,7 @@
 
 ### 总结导入
 
-会话 transcript 自动积累，可手动触发或后台自动执行。通过 LLM 对对话生成结构化摘要并回写至记忆系统，支持叙事、事实、结构化等多种知识类型。
+会话 transcript 自动积累，可手动触发、定时执行，也可按消息阈值自动触发。通过 LLM 对对话生成结构化摘要并回写至记忆系统，支持叙事、事实、结构化等多种知识类型。
 
 ### 内嵌 WebUI
 
@@ -226,6 +226,10 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `summarization.enabled` | bool | `true` | 启用总结导入 |
 | `summarization.context_length` | int | `50` | 总结上下文长度 |
 | `summarization.default_knowledge_type` | string | `narrative` | 总结知识类型（narrative / factual / mixed / structured / auto） |
+| `summarization.auto_trigger_enabled` | bool | `true` | 助手回复后启用自动总结触发 |
+| `summarization.auto_trigger_every_n_messages` | int | `20` | 每累计 N 条 transcript 消息自动总结一次 |
+| `summarization.auto_trigger_min_messages` | int | `20` | 自动总结最小消息门槛 |
+| `summarization.auto_trigger_cooldown_minutes` | float | `15` | 自动总结冷却时间（分钟） |
 
 ### 定时总结（schedule）
 

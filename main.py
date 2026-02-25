@@ -613,7 +613,7 @@ class MemorixPlugin(Star):
             data = await self.summary_service.summarize_session(
                 scope_key=scope_key,
                 session_id=adapted.session_id,
-                source=f"summary:{adapted.platform}:{adapted.session_id}",
+                source=f"chat_summary:{adapted.session_id}",
                 context_length=resolved_context_length,
             )
             yield event.plain_result(to_pretty_text(data))

@@ -242,6 +242,34 @@ class SearchExecutionService:
         if not target or not results:
             return results
 
+        def _extract_chat_session(source_text: str) -> Optional[str]:
+            text = _sanitize_text(source_text)
+            parts = text.split(":", 2)
+            if len(parts) == 3 and parts[0] == "chat":
+                return _sanitize_text(parts[2])
+            return None
+
+        def _extract_summary_session(source_text: str) -> Optional[str]:
+            text = _sanitize_text(source_text)
+            if text.startswith("chat_summary:"):
+                return _sanitize_text(text[len("chat_summary:") :])
+            parts = text.split(":", 2)
+            if len(parts) == 3 and parts[0] == "summary":
+                return _sanitize_text(parts[2])
+            return None
+
+        def _matches_target(item_source: str) -> bool:
+            candidate = _sanitize_text(item_source)
+            if not candidate:
+                return False
+            if candidate == target:
+                return True
+            target_session = _extract_chat_session(target)
+            if not target_session:
+                return False
+            summary_session = _extract_summary_session(candidate)
+            return bool(summary_session and summary_session == target_session)
+
         filtered: List[Any] = []
         for item in results:
             item_source = SearchExecutionService._resolve_result_source(item, metadata_store)
@@ -249,7 +277,7 @@ class SearchExecutionService:
                 if not strict:
                     filtered.append(item)
                 continue
-            if item_source == target:
+            if _matches_target(item_source):
                 filtered.append(item)
         return filtered
 

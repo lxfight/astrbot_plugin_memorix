@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from astrbot.api import logger
-from core.utils.summary_importer import SummaryImporter
-
 from amemorix.context import AppContext
 from amemorix.llm_client import LLMClient
 from amemorix.settings import resolve_openapi_endpoint_config
+from astrbot.api import logger
+from core.utils.summary_importer import SummaryImporter
 from providers.astrbot_provider_bridge import AstrBotLLMClient
 
 
@@ -51,11 +50,13 @@ class SummaryService:
         messages: List[Dict[str, Any]],
         source: str = "",
         context_length: int = 50,
+        persist_messages: bool = False,
     ) -> Dict[str, Any]:
         ok, msg = await self.importer.import_from_transcript(
             session_id=session_id,
             messages=messages,
             source=source,
             context_length=context_length,
+            persist_messages=persist_messages,
         )
         return {"success": ok, "message": msg}

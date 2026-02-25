@@ -128,6 +128,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "context_length": 50,
         "include_personality": True,
         "default_knowledge_type": "narrative",
+        "auto_trigger_enabled": True,
+        "auto_trigger_every_n_messages": 20,
+        "auto_trigger_min_messages": 20,
+        "auto_trigger_cooldown_minutes": 15.0,
     },
     "schedule": {
         "enabled": True,

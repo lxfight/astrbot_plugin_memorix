@@ -8,8 +8,8 @@ import json
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from astrbot.api import logger
 from amemorix.llm_client import LLMClient
+from astrbot.api import logger
 
 from ..embedding.api_adapter import EmbeddingAPIAdapter
 from ..storage import (
@@ -119,6 +119,7 @@ class SummaryImporter:
         messages: List[Dict[str, Any]],
         source: str = "",
         context_length: Optional[int] = None,
+        persist_messages: bool = False,
     ) -> Tuple[bool, str]:
         try:
             session = self.metadata_store.upsert_transcript_session(
@@ -126,10 +127,42 @@ class SummaryImporter:
                 source=source or f"transcript:{session_id}",
                 metadata={"imported_at": time.time()},
             )
-            self.metadata_store.append_transcript_messages(session_id=session["session_id"], messages=messages)
 
             limit = int(context_length) if context_length is not None else int(self._cfg("summarization.context_length", 50))
-            transcript_messages = self.metadata_store.get_transcript_messages(session["session_id"], limit=max(1, limit))
+            normalized_messages: List[Dict[str, Any]] = []
+            for item in messages or []:
+                if not isinstance(item, dict):
+                    continue
+                role = str(item.get("role", "user") or "user").strip() or "user"
+                content = str(item.get("content", "") or "").strip()
+                if not content:
+                    continue
+                normalized_messages.append(
+                    {
+                        "role": role,
+                        "content": content,
+                        "timestamp": item.get("timestamp"),
+                        "metadata": item.get("metadata", {}),
+                    }
+                )
+
+            if persist_messages and normalized_messages:
+                self.metadata_store.append_transcript_messages(
+                    session_id=session["session_id"],
+                    messages=normalized_messages,
+                )
+
+            if normalized_messages:
+                transcript_messages = normalized_messages[-max(1, limit) :]
+            else:
+                transcript_messages = self.metadata_store.get_transcript_messages(
+                    session["session_id"],
+                    limit=max(1, limit),
+                )
+
+            if not transcript_messages:
+                return False, "未找到可总结的聊天记录"
+
             payload = await self._generate_summary_payload(transcript_messages)
 
             summary = str(payload.get("summary", "") or "").strip()
