@@ -7,9 +7,7 @@ from typing import Any, Dict, Optional
 
 from astrbot.api import logger
 
-from ..amemorix.services.import_service import ImportService
 from ..app_context import ScopeRuntimeManager
-from ..core.utils.time_parser import normalize_time_meta
 
 
 class IngestService:
@@ -110,6 +108,8 @@ class IngestService:
         ctx = runtime.context
         session = str(session_id or "").strip() or f"scope:{scope_key}"
 
+        # 仅将原始消息存入 transcript（聊天记录表），不做向量化。
+        # 向量库和知识图谱仅由 LLM 总结提炼后写入，避免低质量碎片污染检索空间。
         ctx.metadata_store.upsert_transcript_session(
             session_id=session,
             source=source,
@@ -126,52 +126,20 @@ class IngestService:
             messages=[{"role": str(role or "user"), "content": text}],
         )
 
-        importer = ImportService(ctx)
         try:
-            result = await importer.import_paragraph(
-                content=text,
-                source=source,
-                time_meta=normalize_time_meta(time_meta or {}),
+            await self._maybe_enqueue_summary(
+                scope_key=scope_key,
+                session_id=session,
+                role=role,
+                runtime=runtime,
             )
-            try:
-                await self._maybe_enqueue_summary(
-                    scope_key=scope_key,
-                    session_id=session,
-                    role=role,
-                    runtime=runtime,
-                )
-            except Exception as summary_exc:
-                logger.warning(
-                    "auto summary enqueue failed: scope=%s session=%s err=%s",
-                    scope_key,
-                    session,
-                    summary_exc,
-                    exc_info=True,
-                )
-            return {"success": True, "result": result, "skipped": False}
-        except Exception:
-            paragraph_hash = ctx.metadata_store.add_paragraph(
-                content=text,
-                source=source,
-                time_meta=normalize_time_meta(time_meta or {}),
+        except Exception as summary_exc:
+            logger.warning(
+                "auto summary enqueue failed: scope=%s session=%s err=%s",
+                scope_key,
+                session,
+                summary_exc,
+                exc_info=True,
             )
-            try:
-                await self._maybe_enqueue_summary(
-                    scope_key=scope_key,
-                    session_id=session,
-                    role=role,
-                    runtime=runtime,
-                )
-            except Exception as summary_exc:
-                logger.warning(
-                    "auto summary enqueue failed after fallback import: scope=%s session=%s err=%s",
-                    scope_key,
-                    session,
-                    summary_exc,
-                    exc_info=True,
-                )
-            return {
-                "success": True,
-                "result": {"mode": "paragraph", "hash": paragraph_hash, "embedding_skipped": True},
-                "skipped": False,
-            }
+
+        return {"success": True, "skipped": False, "result": {"mode": "transcript_only"}}

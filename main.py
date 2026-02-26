@@ -306,10 +306,17 @@ class MemorixPlugin(Star):
         start = time.perf_counter()
         try:
             source = f"chat:{adapted.platform}:{adapted.session_id}"
+
+            # top_k 从配置读取，不再硬编码
+            inject_top_k = self._to_int(
+                self.config.get("retrieval", {}).get("inject_top_k", 10),
+                default=10, min_value=1,
+            )
+
             search_result = await self.query_service.search(
                 scope_key=scope_key,
                 query=query,
-                top_k=6,
+                top_k=inject_top_k,
                 stream_id=adapted.session_id,
                 group_id=adapted.group_id,
                 user_id=adapted.sender_id,
@@ -317,11 +324,46 @@ class MemorixPlugin(Star):
                 strict_source=True,
                 enforce_chat_filter=False,
             )
-            lines = []
-            for item in (search_result.get("results") or [])[:6]:
+
+            # 富格式化检索结果：按类型分组，附带置信度和时间元数据
+            results = (search_result.get("results") or [])[:inject_top_k]
+            paragraphs = []
+            relations = []
+            for item in results:
                 content = str(item.get("content", "")).strip()
-                if content:
-                    lines.append(f"- {content}")
+                if not content:
+                    continue
+                rtype = str(item.get("type", "")).strip().lower()
+                if rtype == "relation":
+                    relations.append(item)
+                else:
+                    paragraphs.append(item)
+
+            memory_lines = []
+            if paragraphs:
+                memory_lines.append("【记忆片段】")
+                for i, item in enumerate(paragraphs, 1):
+                    score = float(item.get("score", 0))
+                    score_pct = f"[{score * 100:.0f}%] " if score > 0 else ""
+                    content = str(item.get("content", "")).strip()
+                    summary = content[:150] + ("..." if len(content) > 150 else "")
+                    line = f"  {i}. {score_pct}{summary}"
+                    # 附加时间元数据（如有）
+                    time_meta = (item.get("metadata") or {}).get("time_meta") or {}
+                    t_start = str(time_meta.get("event_time_start", "")).strip()
+                    t_end = str(time_meta.get("event_time_end", "")).strip()
+                    if t_start or t_end:
+                        time_hint = f"({t_start}" + (f" ~ {t_end}" if t_end and t_end != t_start else "") + ")"
+                        line += f"  {time_hint}"
+                    memory_lines.append(line)
+
+            if relations:
+                memory_lines.append("【关系知识】")
+                for i, item in enumerate(relations, 1):
+                    score = float(item.get("score", 0))
+                    score_pct = f"[{score * 100:.0f}%] " if score > 0 else ""
+                    content = str(item.get("content", "")).strip()
+                    memory_lines.append(f"  {i}. {score_pct}{content}")
 
             profile_text = ""
             profile_enabled = await self.profile_service.is_injection_enabled(
@@ -352,8 +394,8 @@ class MemorixPlugin(Star):
                 logger.debug("[memorix] person profile injection disabled %s", self._event_ctx_text(event, scope_key))
 
             block_parts = []
-            if lines:
-                block_parts.append("【历史记忆片段】\n" + "\n".join(lines))
+            if memory_lines:
+                block_parts.append("\n".join(memory_lines))
             if profile_text:
                 block_parts.append("【人物画像-内部参考】\n" + profile_text)
             if not block_parts:

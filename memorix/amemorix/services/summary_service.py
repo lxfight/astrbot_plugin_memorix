@@ -43,6 +43,7 @@ class SummaryService:
             embedding_manager=self.ctx.embedding_manager,
             plugin_config=self.ctx.config,
             llm_client=self.llm_client,
+            astrbot_context=self._resolve_astrbot_context(),
         )
 
     def _cfg(self, key: str, default: Any = None) -> Any:

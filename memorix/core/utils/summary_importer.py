@@ -21,24 +21,30 @@ from ..storage import (
 )
 
 SUMMARY_PROMPT_TEMPLATE = """
-你需要对聊天记录进行结构化总结，并抽取关键实体与关系。
+你是 {bot_name}。{personality_context}
+现在你需要对以下一段聊天记录进行总结，并提取其中的重要知识。
 
-聊天记录：
+聊天记录内容：
 {chat_history}
 
-请输出严格 JSON：
+请完成以下任务：
+1. **生成总结**：以第三人称或机器人的视角，简洁明了地总结这段对话的主要内容、发生的事件或讨论的主题。
+2. **提取实体与关系**：识别并提取对话中提到的重要实体（人名、地名、事物等）以及它们之间的关系。
+
+请严格以 JSON 格式输出，格式如下：
 {{
-  "summary": "对话总结",
-  "entities": ["实体1", "实体2"],
+  "summary": "总结文本内容",
+  "entities": ["张三", "李四"],
   "relations": [
-    {{"subject":"实体1","predicate":"关系","object":"实体2"}}
+    {{"subject": "张三", "predicate": "认识", "object": "李四"}}
   ]
 }}
 
-要求：
-1. 总结简洁、客观、可作为长期记忆。
-2. 实体与关系尽量使用原文措辞。
-3. 如果没有关系，relations 返回空数组。
+注意：
+1. 总结应具有叙事性，能够作为长程记忆的一部分。
+2. 直接使用实体的实际名称，不要使用 e1/e2 等代号。
+3. 实体与关系尽量使用原文措辞。
+4. 如果没有明确的关系，relations 返回空数组。
 """
 
 class SummaryImporter:
@@ -50,6 +56,7 @@ class SummaryImporter:
         embedding_manager: EmbeddingAPIAdapter,
         plugin_config: dict,
         llm_client: Optional[LLMClient] = None,
+        astrbot_context: Optional[Any] = None,
     ):
         self.vector_store = vector_store
         self.graph_store = graph_store
@@ -57,6 +64,7 @@ class SummaryImporter:
         self.embedding_manager = embedding_manager
         self.plugin_config = plugin_config or {}
         self.llm_client = llm_client
+        self._astrbot_context = astrbot_context
 
     def _cfg(self, key: str, default: Any = None) -> Any:
         current: Any = self.plugin_config if isinstance(self.plugin_config, dict) else {}
@@ -82,21 +90,61 @@ class SummaryImporter:
         merged = merged[:500]
         return {"summary": merged or "暂无可总结内容", "entities": [], "relations": []}
 
+    async def _resolve_persona(self) -> Tuple[str, str]:
+        """从 AstrBot persona_manager 获取 bot 名称和人格描述。"""
+        ctx = self._astrbot_context
+        if ctx is None:
+            return "AI助手", ""
+        try:
+            persona_mgr = getattr(ctx, "persona_manager", None)
+            if persona_mgr is None:
+                return "AI助手", ""
+            get_default = getattr(persona_mgr, "get_default_persona_v3", None)
+            if callable(get_default):
+                import inspect
+                personality = get_default(umo=None)
+                if inspect.isawaitable(personality):
+                    personality = await personality
+                if isinstance(personality, dict):
+                    bot_name = str(personality.get("name", "") or "").strip() or "AI助手"
+                    persona_text = str(personality.get("prompt", "") or "").strip()
+                    return bot_name, persona_text
+        except Exception as exc:
+            logger.debug("resolve AstrBot persona failed: %s", exc)
+        return "AI助手", ""
+
     async def _generate_summary_payload(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not messages:
             return self._fallback_summary(messages)
 
         history = self._build_chat_text(messages)
-        prompt = SUMMARY_PROMPT_TEMPLATE.format(chat_history=history)
+
+        # 从 AstrBot 人格系统获取 bot 名称和人设
+        bot_name, persona_text = await self._resolve_persona()
+        if persona_text:
+            personality_context = f"你的人设信息如下：{persona_text}"
+        else:
+            personality_context = ""
+
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(
+            bot_name=bot_name,
+            personality_context=personality_context,
+            chat_history=history,
+        )
 
         if self.llm_client is None:
+            logger.error(
+                "LLM client is None — summary will fallback to raw text "
+                "with NO entities/relations. Graph will NOT grow! "
+                "Please check provider / LLM configuration.",
+            )
             return self._fallback_summary(messages)
 
         try:
             ok, payload, raw = await self.llm_client.complete_json(prompt, temperature=0.2, max_tokens=1200)
             if ok and isinstance(payload, dict):
                 return payload
-            logger.warning("Summary LLM returned non-JSON, fallback parser used.")
+            logger.warning("Summary LLM returned non-JSON, fallback parser used. raw=%s", raw[:200] if raw else "(empty)")
             if raw:
                 start = raw.find("{")
                 end = raw.rfind("}")
@@ -108,7 +156,10 @@ class SummaryImporter:
                     except json.JSONDecodeError:
                         pass
         except Exception as exc:
-            logger.warning("Summary LLM call failed: %s", exc)
+            logger.error(
+                "Summary LLM call failed (entities/relations will be EMPTY, "
+                "graph will NOT grow): %s", exc, exc_info=True,
+            )
 
         return self._fallback_summary(messages)
 
@@ -211,6 +262,14 @@ class SummaryImporter:
         stream_id: str,
         time_meta: Optional[Dict[str, Any]] = None,
     ) -> None:
+        if not entities and not relations:
+            logger.warning(
+                "Summary for session=%s produced 0 entities and 0 relations. "
+                "Knowledge graph will NOT grow from this import. "
+                "This usually means the LLM call failed or returned poor results.",
+                stream_id,
+            )
+
         type_str = self._cfg("summarization.default_knowledge_type", "narrative")
         knowledge_type = get_knowledge_type_from_string(type_str) or KnowledgeType.NARRATIVE
 

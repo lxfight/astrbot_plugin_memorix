@@ -63,7 +63,8 @@ class AppContext:
         mode = str(filter_config.get("mode", "whitelist")).strip().lower()
         chats = filter_config.get("chats", [])
         if not chats:
-            return mode == "blacklist"
+            # 未配置任何过滤规则时，默认允许全部会话
+            return True
 
         sid = str(stream_id or "")
         gid = str(group_id or "")
