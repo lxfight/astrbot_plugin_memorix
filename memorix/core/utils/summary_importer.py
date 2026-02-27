@@ -173,10 +173,21 @@ class SummaryImporter:
         persist_messages: bool = False,
     ) -> Tuple[bool, str]:
         try:
+            existing_session = self.metadata_store.get_transcript_session(session_id)
+            existing_metadata: Dict[str, Any] = {}
+            existing_source = ""
+            if isinstance(existing_session, dict):
+                existing_meta_obj = existing_session.get("metadata")
+                if isinstance(existing_meta_obj, dict):
+                    existing_metadata = dict(existing_meta_obj)
+                existing_source = str(existing_session.get("source", "") or "").strip()
+
+            session_metadata = dict(existing_metadata)
+            session_metadata["imported_at"] = time.time()
             session = self.metadata_store.upsert_transcript_session(
                 session_id=session_id,
-                source=source or f"transcript:{session_id}",
-                metadata={"imported_at": time.time()},
+                source=source or existing_source or f"transcript:{session_id}",
+                metadata=session_metadata,
             )
 
             limit = int(context_length) if context_length is not None else int(self._cfg("summarization.context_length", 50))

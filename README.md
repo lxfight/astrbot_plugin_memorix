@@ -228,10 +228,6 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `summarization.source_mode` | string | `hybrid` | 总结来源模式：`transcript` / `astrbot` / `hybrid`（优先 AstrBot） |
 | `summarization.context_length` | int | `50` | 总结上下文长度 |
 | `summarization.default_knowledge_type` | string | `narrative` | 总结知识类型（narrative / factual / mixed / structured / auto） |
-| `summarization.auto_trigger_enabled` | bool | `true` | 助手回复后启用自动总结触发 |
-| `summarization.auto_trigger_every_n_messages` | int | `20` | 每累计 N 条 transcript 消息自动总结一次 |
-| `summarization.auto_trigger_min_messages` | int | `20` | 自动总结最小消息门槛 |
-| `summarization.auto_trigger_cooldown_minutes` | float | `15` | 自动总结冷却时间（分钟） |
 
 ### 定时总结（schedule）
 

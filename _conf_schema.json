@@ -284,26 +284,6 @@
         "description": "总结写入知识类型",
         "default": "narrative",
         "options": ["narrative", "factual", "mixed", "structured", "auto"]
-      },
-      "auto_trigger_enabled": {
-        "type": "bool",
-        "description": "自动总结触发（在助手回复写入后按阈值自动入队）",
-        "default": true
-      },
-      "auto_trigger_every_n_messages": {
-        "type": "int",
-        "description": "每累计 N 条 transcript 消息触发一次自动总结",
-        "default": 20
-      },
-      "auto_trigger_min_messages": {
-        "type": "int",
-        "description": "自动总结最小消息数门槛",
-        "default": 20
-      },
-      "auto_trigger_cooldown_minutes": {
-        "type": "float",
-        "description": "自动总结触发冷却时间（分钟）",
-        "default": 15.0
       }
     }
   },

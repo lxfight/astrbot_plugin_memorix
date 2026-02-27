@@ -274,12 +274,11 @@ class TaskManager:
                 skipped_count += 1
                 continue
 
-            messages = []
-            if source_mode == "transcript":
-                messages = self.ctx.metadata_store.get_transcript_messages(session_id, limit=context_length)
-                if not messages:
-                    skipped_count += 1
-                    continue
+            transcript_messages = self.ctx.metadata_store.get_transcript_messages(session_id, limit=context_length)
+            if source_mode == "transcript" and not transcript_messages:
+                skipped_count += 1
+                continue
+            messages = transcript_messages if transcript_messages else []
 
             try:
                 result = await self.summary_service.import_from_transcript(
