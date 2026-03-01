@@ -205,6 +205,7 @@ class SummaryImporter:
                         "content": content,
                         "timestamp": item.get("timestamp"),
                         "metadata": item.get("metadata", {}),
+                        "created_at": item.get("created_at"),
                     }
                 )
 
@@ -242,6 +243,39 @@ class SummaryImporter:
 
             self.vector_store.save()
             self.graph_store.save()
+
+            try:
+                last_msg_created_at: Optional[float] = None
+                for item in transcript_messages:
+                    if not isinstance(item, dict):
+                        continue
+                    ts_raw = item.get("created_at")
+                    if ts_raw is None:
+                        continue
+                    try:
+                        ts_val = float(ts_raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if last_msg_created_at is None or ts_val > last_msg_created_at:
+                        last_msg_created_at = ts_val
+
+                if last_msg_created_at is None:
+                    tail = self.metadata_store.get_transcript_messages(session["session_id"], limit=1)
+                    if tail and isinstance(tail[-1], dict):
+                        ts_raw = tail[-1].get("created_at")
+                        try:
+                            last_msg_created_at = float(ts_raw) if ts_raw is not None else None
+                        except (TypeError, ValueError):
+                            last_msg_created_at = None
+
+                self.metadata_store.upsert_transcript_summary_state(
+                    session_id=session["session_id"],
+                    last_summary_at=time.time(),
+                    last_message_created_at=last_msg_created_at,
+                )
+            except Exception:
+                logger.debug("update transcript summary state failed: session=%s", session["session_id"], exc_info=True)
+
             return True, f"总结导入成功: session={session['session_id']}"
         except Exception as exc:
             logger.error("Summary transcript import failed: %s", exc, exc_info=True)

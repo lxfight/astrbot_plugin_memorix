@@ -265,9 +265,17 @@ class TaskManager:
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT session_id, metadata
-            FROM transcript_sessions
-            ORDER BY updated_at DESC
+            WITH last_msgs AS (
+                SELECT session_id, MAX(created_at) AS last_msg_created_at
+                FROM transcript_messages
+                GROUP BY session_id
+            )
+            SELECT s.session_id, s.metadata, lm.last_msg_created_at, st.last_message_created_at
+            FROM transcript_sessions s
+            JOIN last_msgs lm ON lm.session_id = s.session_id
+            LEFT JOIN transcript_summary_state st ON st.session_id = s.session_id
+            WHERE st.last_message_created_at IS NULL OR lm.last_msg_created_at > st.last_message_created_at
+            ORDER BY lm.last_msg_created_at DESC
             LIMIT ?
             """,
             (resolved_limit,),

@@ -496,6 +496,20 @@ class MetadataStore:
 
             cursor.execute(
                 """
+                CREATE TABLE IF NOT EXISTS transcript_summary_state (
+                    session_id TEXT PRIMARY KEY,
+                    last_summary_at REAL,
+                    last_message_created_at REAL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_transcript_summary_state_updated ON transcript_summary_state(updated_at DESC)"
+            )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS async_tasks (
                     task_id TEXT PRIMARY KEY,
                     task_type TEXT NOT NULL,
@@ -3420,6 +3434,55 @@ class MetadataStore:
                 }
             )
         return items
+
+    def get_transcript_summary_state(self, session_id: str) -> Optional[Dict[str, Any]]:
+        if not session_id:
+            return None
+        cursor = self._conn.cursor()
+        cursor.execute(
+            """
+            SELECT session_id, last_summary_at, last_message_created_at, updated_at
+            FROM transcript_summary_state
+            WHERE session_id = ?
+            LIMIT 1
+            """,
+            (str(session_id),),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "session_id": str(row[0] or ""),
+            "last_summary_at": row[1],
+            "last_message_created_at": row[2],
+            "updated_at": row[3],
+        }
+
+    def upsert_transcript_summary_state(
+        self,
+        *,
+        session_id: str,
+        last_summary_at: Optional[float] = None,
+        last_message_created_at: Optional[float] = None,
+    ) -> None:
+        if not session_id:
+            return
+        now = datetime.now().timestamp()
+        summary_at = float(last_summary_at) if last_summary_at is not None else now
+        msg_at = float(last_message_created_at) if last_message_created_at is not None else None
+        cursor = self._conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO transcript_summary_state (session_id, last_summary_at, last_message_created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+                last_summary_at = excluded.last_summary_at,
+                last_message_created_at = excluded.last_message_created_at,
+                updated_at = excluded.updated_at
+            """,
+            (str(session_id), summary_at, msg_at, now),
+        )
+        self._conn.commit()
 
     def create_async_task(self, *, task_id: str, task_type: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         now = datetime.now().timestamp()
