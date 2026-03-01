@@ -23,6 +23,7 @@ TASK_STATUS_SUCCEEDED = "succeeded"
 TASK_STATUS_FAILED = "failed"
 TASK_STATUS_CANCELED = "canceled"
 
+
 class TaskManager:
     def __init__(self, ctx: AppContext):
         self.ctx = ctx
@@ -36,6 +37,7 @@ class TaskManager:
         self.summary_queue: asyncio.Queue[Tuple[str, Dict[str, Any]]] = asyncio.Queue(maxsize=max(1, queue_maxsize))
         self._workers: List[asyncio.Task] = []
         self._stopping = False
+        self._bulk_summary_lock = asyncio.Lock()
 
     async def start(self) -> None:
         self._stopping = False
@@ -74,6 +76,20 @@ class TaskManager:
         task = self.ctx.metadata_store.create_async_task(task_id=task_id, task_type="summary", payload=payload)
         await self.summary_queue.put((task_id, payload))
         return task
+
+    async def run_bulk_summary_import(
+        self,
+        *,
+        limit: Optional[int] = None,
+        context_length: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Run bulk summarization for transcript sessions.
+
+        This shares the same code path as the scheduled import loop, but can be
+        triggered from commands / external callers.
+        """
+        async with self._bulk_summary_lock:
+            return await self._perform_bulk_summary_import(limit=limit, context_length=context_length)
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         return self.ctx.metadata_store.get_async_task(task_id)
@@ -218,7 +234,7 @@ class TaskManager:
                         target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
                         if last_check < target <= now:
                             logger.info("trigger scheduled summary import at %s", text)
-                            await self._perform_bulk_summary_import()
+                            await self.run_bulk_summary_import()
                     except Exception as exc:
                         logger.warning("invalid schedule.import_times value: %s (%s)", text, exc)
 
@@ -229,26 +245,37 @@ class TaskManager:
                 logger.warning("Scheduled summary loop error: %s", exc, exc_info=True)
                 await asyncio.sleep(60)
 
-    async def _perform_bulk_summary_import(self) -> None:
+    async def _perform_bulk_summary_import(
+        self,
+        *,
+        limit: Optional[int] = None,
+        context_length: Optional[int] = None,
+    ) -> Dict[str, Any]:
         conn = self.ctx.metadata_store._conn
         if conn is None:
-            return
+            return {"success": 0, "skipped": 0, "failed": 0, "candidates": 0, "message": "metadata store not ready"}
 
-        context_length = max(1, int(self.ctx.get_config("summarization.context_length", 50) or 50))
+        resolved_context_length = (
+            max(1, int(context_length))
+            if context_length is not None
+            else max(1, int(self.ctx.get_config("summarization.context_length", 50) or 50))
+        )
         source_mode = str(self.ctx.get_config("summarization.source_mode", "hybrid") or "hybrid").strip().lower()
+        resolved_limit = max(1, int(limit)) if limit is not None else 500
         cursor = conn.cursor()
         cursor.execute(
             """
             SELECT session_id, metadata
             FROM transcript_sessions
             ORDER BY updated_at DESC
-            LIMIT 500
-            """
+            LIMIT ?
+            """,
+            (resolved_limit,),
         )
         rows = cursor.fetchall()
         if not rows:
             logger.debug("scheduled summary skipped: no transcript sessions")
-            return
+            return {"success": 0, "skipped": 0, "failed": 0, "candidates": 0}
 
         success_count = 0
         skipped_count = 0
@@ -274,7 +301,10 @@ class TaskManager:
                 skipped_count += 1
                 continue
 
-            transcript_messages = self.ctx.metadata_store.get_transcript_messages(session_id, limit=context_length)
+            transcript_messages = self.ctx.metadata_store.get_transcript_messages(
+                session_id,
+                limit=resolved_context_length,
+            )
             if source_mode == "transcript" and not transcript_messages:
                 skipped_count += 1
                 continue
@@ -285,7 +315,7 @@ class TaskManager:
                     session_id=session_id,
                     messages=messages,
                     source=f"chat_summary:{session_id}",
-                    context_length=context_length,
+                    context_length=resolved_context_length,
                 )
                 if bool(result.get("success")):
                     success_count += 1
@@ -302,6 +332,12 @@ class TaskManager:
             fail_count,
             len(rows),
         )
+        return {
+            "success": success_count,
+            "skipped": skipped_count,
+            "failed": fail_count,
+            "candidates": len(rows),
+        }
 
     async def _process_reinforce_batch(self, hashes: List[str]) -> None:
         if not hashes:

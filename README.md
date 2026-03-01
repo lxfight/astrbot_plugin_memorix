@@ -118,6 +118,7 @@ https://github.com/exynos967/astrbot_plugin_memorix
 
 | 命令 | 说明 |
 |---|---|
+| `/mem summary_all [上下文长度] [最大会话数]` | 对当前作用域内所有已记录会话执行批量总结导入 |
 | `/mem protect <hash或关键词> [小时数]` | 保护记忆不被衰减（不填时长则永久保护） |
 | `/mem reinforce <hash或关键词>` | 强化记忆热度，自动保护 24h |
 | `/mem restore <hash> [relation\|entity]` | 从回收站恢复已删除的记忆 |

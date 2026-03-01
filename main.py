@@ -728,6 +728,33 @@ class MemorixPlugin(Star):
             logger.error("[memorix] mem summary_now failed: %s", exc, exc_info=True)
             yield event.plain_result(f"总结失败: {exc}")
 
+    @mem.command("summary_all")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def mem_summary_all(self, event: AstrMessageEvent, context_length: int = 50, limit: int = 500):
+        resolved_context_length = self._to_int(context_length, 50)
+        resolved_limit = self._to_int(limit, 500)
+        tokens = self._parse_tail_tokens(event.message_str, "summary_all")
+        if tokens:
+            resolved_context_length = self._to_int(tokens[0], resolved_context_length)
+            if len(tokens) > 1:
+                resolved_limit = self._to_int(tokens[1], resolved_limit)
+
+        self._log_cmd(event, "summary_all", context_length=resolved_context_length, limit=resolved_limit)
+        scope_key = self._resolve_scope(event)
+        started_at = time.time()
+        try:
+            runtime = await self.runtime_manager.get_runtime(scope_key)
+            data = await runtime.task_manager.run_bulk_summary_import(
+                context_length=resolved_context_length,
+                limit=resolved_limit,
+            )
+            data["scope"] = scope_key
+            data["elapsed_seconds"] = round(time.time() - started_at, 3)
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem summary_all failed: %s", exc, exc_info=True)
+            yield event.plain_result(f"全量总结失败: {exc}")
+
     @mem.command("ui")
     async def mem_ui(self, event: AstrMessageEvent):
         if not bool(self.config.get("webui", {}).get("enabled", True)):
