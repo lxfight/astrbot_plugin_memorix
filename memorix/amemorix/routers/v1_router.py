@@ -1,11 +1,13 @@
-"""New standalone operation APIs (/v1/*)."""
+"""Standalone operation APIs (/v1/*)."""
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel, ConfigDict, Field
 
 from amemorix.services import (
     DeleteService,
@@ -21,6 +23,37 @@ class ImportTaskCreateRequest(BaseModel):
     mode: str = Field(default="text")
     payload: Any
     options: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ImportPasteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str
+    name: Optional[str] = None
+    knowledge_type: Optional[str] = None
+
+
+class ImportRawScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    alias: Optional[str] = "raw"
+    relative_path: Optional[str] = ""
+    glob: Optional[str] = "*"
+    recursive: Optional[bool] = True
+    knowledge_type: Optional[str] = None
+
+
+class ImportRetryRequest(BaseModel):
+    input_mode: Optional[str] = None
+    glob: Optional[str] = None
+    recursive: Optional[bool] = None
+    knowledge_type: Optional[str] = None
+
+
+class ImportPathResolveRequest(BaseModel):
+    alias: str
+    relative_path: Optional[str] = ""
+    must_exist: Optional[bool] = True
 
 
 class SummaryTaskCreateRequest(BaseModel):
@@ -124,10 +157,39 @@ def _task_manager(request: Request):
     return manager
 
 
+def _import_manager(request: Request):
+    manager = getattr(request.app.state, "import_task_manager", None)
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Import task manager not initialized")
+    return manager
+
+
+def _import_enabled(request: Request) -> bool:
+    return bool(_ctx(request).get_config("web.import.enabled", False))
+
+
+def _ensure_import_enabled(request: Request) -> None:
+    if not _import_enabled(request):
+        raise HTTPException(status_code=404, detail="导入功能未启用")
+
+
 def _task_or_404(task):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+def _load_import_guide_text() -> Dict[str, Any]:
+    guide_path = (Path(__file__).resolve().parents[2] / "IMPORT_GUIDE.md").resolve()
+    if not guide_path.exists():
+        raise HTTPException(status_code=404, detail=f"导入文档不存在: {guide_path}")
+    text = guide_path.read_text(encoding="utf-8")
+    return {
+        "source": "local",
+        "url": "",
+        "path": str(guide_path),
+        "content": text,
+    }
 
 
 @router.post("/import/tasks")
@@ -141,10 +203,140 @@ async def create_import_task(request: Request, body: ImportTaskCreateRequest):
     }
 
 
+@router.post("/import/tasks/upload")
+async def create_import_task_upload(
+    request: Request,
+    files: Optional[list[UploadFile]] = File(default=None),
+    files_array: Optional[list[UploadFile]] = File(default=None, alias="files[]"),
+    payload: str = Form("{}"),
+):
+    _ensure_import_enabled(request)
+    merged_files = list(files or []) + list(files_array or [])
+    if not merged_files:
+        raise HTTPException(status_code=400, detail="至少需要上传一个文件")
+    try:
+        payload_obj = json.loads(payload or "{}")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="payload 必须为合法 JSON") from exc
+    if not isinstance(payload_obj, dict):
+        raise HTTPException(status_code=400, detail="payload 必须为 JSON 对象")
+    manager = _import_manager(request)
+    try:
+        task = await manager.create_upload_task(merged_files, payload_obj)
+        return {"success": True, "task": task}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/import/tasks/paste")
+async def create_import_task_paste(request: Request, body: ImportPasteRequest):
+    _ensure_import_enabled(request)
+    manager = _import_manager(request)
+    try:
+        task = await manager.create_paste_task(body.model_dump())
+        return {"success": True, "task": task}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/import/tasks/raw_scan")
+async def create_import_task_raw_scan(request: Request, body: ImportRawScanRequest):
+    _ensure_import_enabled(request)
+    manager = _import_manager(request)
+    try:
+        task = await manager.create_raw_scan_task(body.model_dump())
+        return {"success": True, "task": task}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/import/tasks")
+async def list_import_tasks(request: Request, limit: int = Query(50, ge=1, le=200)):
+    _ensure_import_enabled(request)
+    manager = _import_manager(request)
+    items = await manager.list_tasks(limit=limit)
+    return {"success": True, "items": items}
+
+
 @router.get("/import/tasks/{task_id}")
-async def get_import_task(request: Request, task_id: str):
-    manager = _task_manager(request)
-    return _task_or_404(manager.get_task(task_id))
+async def get_import_task(request: Request, task_id: str, include_chunks: bool = Query(False)):
+    if _import_enabled(request):
+        manager = _import_manager(request)
+        task = await manager.get_task(task_id, include_chunks=include_chunks)
+        if task is not None:
+            return {"success": True, "task": task}
+    legacy_manager = _task_manager(request)
+    return _task_or_404(legacy_manager.get_task(task_id))
+
+
+@router.get("/import/tasks/{task_id}/files/{file_id}/chunks")
+async def get_import_chunks(
+    request: Request,
+    task_id: str,
+    file_id: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+):
+    _ensure_import_enabled(request)
+    manager = _import_manager(request)
+    data = await manager.get_chunks(task_id, file_id, offset=offset, limit=limit)
+    if data is None:
+        raise HTTPException(status_code=404, detail="任务或文件不存在")
+    return {"success": True, **data}
+
+
+@router.post("/import/tasks/{task_id}/cancel")
+async def cancel_import_task(request: Request, task_id: str):
+    _ensure_import_enabled(request)
+    manager = _import_manager(request)
+    task = await manager.cancel_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {"success": True, "task": task}
+
+
+@router.post("/import/tasks/{task_id}/retry_failed")
+async def retry_import_task_failed(
+    request: Request,
+    task_id: str,
+    body: Optional[ImportRetryRequest] = Body(default=None),
+):
+    _ensure_import_enabled(request)
+    manager = _import_manager(request)
+    overrides = body.model_dump(exclude_none=True) if body else {}
+    try:
+        task = await manager.retry_failed(task_id, overrides=overrides)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {"success": True, "task": task}
+
+
+@router.get("/import/path_aliases")
+async def get_import_path_aliases(request: Request):
+    _ensure_import_enabled(request)
+    manager = _import_manager(request)
+    aliases = manager.get_path_aliases()
+    filtered = {k: v for k, v in aliases.items() if k in {"raw", "plugin_data"}}
+    return {"success": True, "items": filtered}
+
+
+@router.post("/import/path_resolve")
+async def resolve_import_path(request: Request, body: ImportPathResolveRequest):
+    _ensure_import_enabled(request)
+    manager = _import_manager(request)
+    try:
+        data = await manager.resolve_path_request(body.model_dump())
+        return {"success": True, **data}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/import/guide")
+async def get_import_guide(request: Request):
+    _ensure_import_enabled(request)
+    return {"success": True, **_load_import_guide_text()}
 
 
 @router.post("/query/search")
@@ -330,4 +522,3 @@ async def create_summary_task(request: Request, body: SummaryTaskCreateRequest):
 async def get_summary_task(request: Request, task_id: str):
     manager = _task_manager(request)
     return _task_or_404(manager.get_task(task_id))
-
