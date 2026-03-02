@@ -296,10 +296,11 @@ class MemorixPlugin(Star):
                 exc_info=True,
             )
 
-    @filter.on_llm_request()
+    @filter.on_llm_request(priority=40)
     async def on_llm_request(self, event: AstrMessageEvent, req):
         scope_key = self._resolve_scope(event)
         query = str(getattr(event, "message_str", "") or "").strip()
+        query = self._strip_leading_mentions(query)
         if not query:
             return
         adapted = AstrbotEventAdapter.from_event(event, scope_key)
@@ -327,6 +328,21 @@ class MemorixPlugin(Star):
 
             # 富格式化检索结果：按类型分组，附带置信度和时间元数据
             results = (search_result.get("results") or [])[:inject_top_k]
+            if not results:
+                # Fallback: session_id/source may be unstable across providers. If strict source returns nothing,
+                # relax to scope-wide retrieval so memory injection still works in the current scope.
+                search_result = await self.query_service.search(
+                    scope_key=scope_key,
+                    query=query,
+                    top_k=inject_top_k,
+                    stream_id=adapted.session_id,
+                    group_id=adapted.group_id,
+                    user_id=adapted.sender_id,
+                    source=None,
+                    strict_source=False,
+                    enforce_chat_filter=False,
+                )
+                results = (search_result.get("results") or [])[:inject_top_k]
             paragraphs = []
             relations = []
             for item in results:
@@ -632,6 +648,29 @@ class MemorixPlugin(Star):
         except Exception as exc:
             logger.error("[memorix] mem restore failed: %s", exc, exc_info=True)
             yield event.plain_result(f"恢复失败: {exc}")
+
+    @mem.command("delete_entity")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def mem_delete_entity(self, event: AstrMessageEvent, entity_name: str = ""):
+        target = str(entity_name or "").strip()
+        parsed = self._parse_tail(event.message_str, "delete_entity")
+        if parsed:
+            target = parsed
+        if not target:
+            yield event.plain_result("用法: /mem delete_entity <实体名>")
+            return
+        self._log_cmd(event, "delete_entity", entity_len=len(target))
+        scope_key = self._resolve_scope(event)
+        try:
+            runtime = await self.runtime_manager.get_runtime(scope_key)
+            from .memorix.amemorix.services.delete_service import DeleteService
+
+            data = await DeleteService(runtime.context).entity(target)
+            data["scope"] = scope_key
+            yield event.plain_result(to_pretty_text(data))
+        except Exception as exc:
+            logger.error("[memorix] mem delete_entity failed: %s", exc, exc_info=True)
+            yield event.plain_result(f"删除实体失败: {exc}")
 
     @mem.command("profile")
     async def mem_profile(self, event: AstrMessageEvent, person_keyword_or_id: str = "", top_k: int = 12):

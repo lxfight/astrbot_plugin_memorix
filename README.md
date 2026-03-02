@@ -122,6 +122,7 @@ https://github.com/exynos967/astrbot_plugin_memorix
 | `/mem protect <hash或关键词> [小时数]` | 保护记忆不被衰减（不填时长则永久保护） |
 | `/mem reinforce <hash或关键词>` | 强化记忆热度，自动保护 24h |
 | `/mem restore <hash> [relation\|entity]` | 从回收站恢复已删除的记忆 |
+| `/mem delete_entity <实体名>` | 删除实体（级联删除相关关系与段落关联） |
 | `/mem profile_override <人物ID> <文本>` | 手动覆盖人物画像 |
 | `/mem profile_clear <人物ID>` | 清除画像覆盖，恢复自动生成 |
 

@@ -1,7 +1,7 @@
-/.ruff_cache
-/__pycache__
-/tests
-/memorix/__pycache__
-/memorix/amemorix/__pycache__
-/memorix/webui/__pycache__
-/.pytest_cache
+.ruff_cache/
+.pytest_cache/
+tests/
+# Python cache files
+__pycache__/
+*.py[cod]
+memorix/core/utils/__pycache__

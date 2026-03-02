@@ -45,7 +45,48 @@ SUMMARY_PROMPT_TEMPLATE = """
 2. 直接使用实体的实际名称，不要使用 e1/e2 等代号。
 3. 实体与关系尽量使用原文措辞。
 4. 如果没有明确的关系，relations 返回空数组。
+5. 不要把“用户/user/assistant/AI助手/机器人/我/你”等角色称谓或代词当作实体。
 """
+
+
+_GENERIC_ENTITY_STOPWORDS = {
+    # Role / speaker placeholders
+    "user",
+    "assistant",
+    "system",
+    "tool",
+    "bot",
+    # Chinese placeholders
+    "用户",
+    "助手",
+    "ai助手",
+    "ai助理",
+    "机器人",
+    # Common pronouns (tends to create a giant hub node)
+    "我",
+    "你",
+    "他",
+    "她",
+    "它",
+    "我们",
+    "你们",
+    "他们",
+    "她们",
+    "它们",
+    "大家",
+}
+
+
+def _canon_entity_token(text: Any) -> str:
+    """Normalize entity token for stopword checks."""
+    if text is None:
+        return ""
+    return "".join(str(text).strip().lower().split())
+
+
+def _is_generic_entity(name: str) -> bool:
+    return _canon_entity_token(name) in _GENERIC_ENTITY_STOPWORDS
+
 
 class SummaryImporter:
     def __init__(
@@ -234,10 +275,41 @@ class SummaryImporter:
             if not summary:
                 return False, "总结为空"
 
+            filtered_entities: List[str] = []
+            seen_entities = set()
+            if isinstance(entities, list):
+                for item in entities:
+                    name = str(item or "").strip()
+                    if not name:
+                        continue
+                    if _is_generic_entity(name):
+                        continue
+                    canon = _canon_entity_token(name)
+                    if canon in seen_entities:
+                        continue
+                    seen_entities.add(canon)
+                    filtered_entities.append(name)
+
+            filtered_relations: List[Dict[str, str]] = []
+            if isinstance(relations, list):
+                for rel in relations:
+                    if not isinstance(rel, dict):
+                        continue
+                    s = str(rel.get("subject", "") or "").strip()
+                    p = str(rel.get("predicate", "") or "").strip()
+                    o = str(rel.get("object", "") or "").strip()
+                    if not (s and p and o):
+                        continue
+                    if _is_generic_entity(s) or _is_generic_entity(o):
+                        continue
+                    if s == o:
+                        continue
+                    filtered_relations.append({"subject": s, "predicate": p, "object": o})
+
             await self._execute_import(
                 summary=summary,
-                entities=entities if isinstance(entities, list) else [],
-                relations=relations if isinstance(relations, list) else [],
+                entities=filtered_entities,
+                relations=filtered_relations,
                 stream_id=session["session_id"],
             )
 
