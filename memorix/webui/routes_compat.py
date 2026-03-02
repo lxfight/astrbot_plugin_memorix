@@ -1255,6 +1255,16 @@ class MemorixServer:
             logger.info(f"自动保存已{'启用' if data.enabled else '禁用'}（运行时）")
             return {"success": True, "auto_save_enabled": data.enabled}
 
+        @self.app.get("/import")
+        async def import_page():
+            """返回导入中心页面"""
+            if not bool(self.plugin.get_config("web.import.enabled", False)):
+                raise HTTPException(status_code=404, detail="导入功能未启用")
+            html_path = Path(__file__).parent / "web" / "import.html"
+            if html_path.exists():
+                return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+            return HTMLResponse(content="<h1>Import UI Not Found</h1>", status_code=404)
+
         @self.app.get("/")
         async def index():
             """返回主页"""

@@ -53,6 +53,16 @@
 
 基于 FastAPI 的单页管理界面，默认端口 `8092`（端口冲突自动探测），提供：图谱浏览与关系编辑、记忆管理与来源追踪、回收站恢复、人物画像管理。可选 Bearer Token 鉴权。
 
+### 导入中心（可选启用）
+
+新增 `/import` 导入中心（默认关闭，需手动在配置文件处开启 `web.import.enabled=true`）。页面可进行如下三种导入：
+- 上传文件导入（`.txt/.md/.json`）
+- 粘贴文本导入
+- 原始目录扫描导入（`raw` / `plugin_data` 别名）
+
+导入中心支持手动选择 `knowledge_type`（`auto/factual/narrative/structured/mixed`），并提供任务级/文件级/分块级状态观察、任务取消与失败重试。
+详细说明可见：`memorix/IMPORT_GUIDE.md`（同样可通过 `/v1/import/guide` 获取）。
+
 ## 工作流
 
 ```
@@ -254,7 +264,25 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 | `webui.auth.read_tokens` | list | `[]` | 读接口 Token 列表 |
 | `webui.auth.protect_read_endpoints` | bool | `false` | 是否对读接口启用鉴权 |
 
+### 导入中心（web.import）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `web.import.enabled` | bool | `false` | 启用导入中心 `/import` 与增强导入接口 |
+| `web.import.max_queue_size` | int | `20` | 导入任务队列上限 |
+| `web.import.max_files_per_task` | int | `200` | 单任务最大文件数 |
+| `web.import.max_file_size_mb` | int | `20` | 单文件大小上限（MB） |
+| `web.import.max_paste_chars` | int | `200000` | 粘贴导入字符上限 |
+| `web.import.default_file_concurrency` | int | `2` | 默认文件并发（预留） |
+| `web.import.default_chunk_concurrency` | int | `4` | 默认分块并发（预留） |
+| `web.import.path_aliases.raw` | string | `raw` | 原始目录扫描别名（相对 `storage.data_dir`） |
+| `web.import.path_aliases.plugin_data` | string | `.` | 插件数据目录别名（相对 `storage.data_dir`） |
+
 </details>
+
+## 前端目录说明
+
+- WebUI 运行时实际读取：`memorix/webui/web/*`
 
 ## 依赖
 

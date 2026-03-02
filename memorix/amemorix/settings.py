@@ -104,6 +104,21 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "auto_save_interval_minutes": 5,
         "debug": False,
     },
+    "web": {
+        "import": {
+            "enabled": False,
+            "max_queue_size": 20,
+            "max_files_per_task": 200,
+            "max_file_size_mb": 20,
+            "max_paste_chars": 200000,
+            "default_file_concurrency": 2,
+            "default_chunk_concurrency": 4,
+            "path_aliases": {
+                "raw": "raw",
+                "plugin_data": ".",
+            },
+        }
+    },
     "memory": {
         "enabled": True,
         "half_life_hours": 24.0,

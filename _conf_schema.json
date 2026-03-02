@@ -343,5 +343,68 @@
         }
       }
     }
+  },
+  "web": {
+    "type": "object",
+    "description": "导入中心配置（/import 与 /v1/import/* 增强接口）",
+    "items": {
+      "import": {
+        "type": "object",
+        "description": "导入任务配置",
+        "items": {
+          "enabled": {
+            "type": "bool",
+            "description": "启用导入中心与增强导入接口",
+            "default": false
+          },
+          "max_queue_size": {
+            "type": "int",
+            "description": "导入任务队列上限",
+            "default": 20
+          },
+          "max_files_per_task": {
+            "type": "int",
+            "description": "单任务最大文件数",
+            "default": 200
+          },
+          "max_file_size_mb": {
+            "type": "int",
+            "description": "单文件最大大小（MB）",
+            "default": 20
+          },
+          "max_paste_chars": {
+            "type": "int",
+            "description": "粘贴导入最大字符数",
+            "default": 200000
+          },
+          "default_file_concurrency": {
+            "type": "int",
+            "description": "默认文件并发数（预留）",
+            "default": 2
+          },
+          "default_chunk_concurrency": {
+            "type": "int",
+            "description": "默认分块并发数（预留）",
+            "default": 4
+          },
+          "path_aliases": {
+            "type": "object",
+            "description": "允许扫描的路径别名（仅 raw / plugin_data）",
+            "items": {
+              "raw": {
+                "type": "string",
+                "description": "原始目录别名（相对 storage.data_dir）",
+                "default": "raw"
+              },
+              "plugin_data": {
+                "type": "string",
+                "description": "插件数据目录别名（相对 storage.data_dir）",
+                "default": "."
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
