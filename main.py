@@ -328,21 +328,6 @@ class MemorixPlugin(Star):
 
             # 富格式化检索结果：按类型分组，附带置信度和时间元数据
             results = (search_result.get("results") or [])[:inject_top_k]
-            if not results:
-                # Fallback: session_id/source may be unstable across providers. If strict source returns nothing,
-                # relax to scope-wide retrieval so memory injection still works in the current scope.
-                search_result = await self.query_service.search(
-                    scope_key=scope_key,
-                    query=query,
-                    top_k=inject_top_k,
-                    stream_id=adapted.session_id,
-                    group_id=adapted.group_id,
-                    user_id=adapted.sender_id,
-                    source=None,
-                    strict_source=False,
-                    enforce_chat_filter=False,
-                )
-                results = (search_result.get("results") or [])[:inject_top_k]
             paragraphs = []
             relations = []
             for item in results:

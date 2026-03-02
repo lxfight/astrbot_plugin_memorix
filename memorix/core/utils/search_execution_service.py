@@ -445,12 +445,35 @@ class SearchExecutionService:
                     metadata_store = SearchExecutionService._resolve_runtime_component(
                         plugin_config, plugin_instance, "metadata_store"
                     )
-                    retrieved = SearchExecutionService._apply_source_filter(
+                    original = list(retrieved)
+                    filtered = SearchExecutionService._apply_source_filter(
                         list(retrieved),
                         source=request.source,
                         strict=bool(request.strict_source),
                         metadata_store=metadata_store,
                     )
+                    if (
+                        bool(request.strict_source)
+                        and not filtered
+                        and original
+                        and bool(
+                            _get_config_value(
+                                plugin_config,
+                                "retrieval.search.source_empty_fallback.enabled",
+                                True,
+                            )
+                        )
+                    ):
+                        # Avoid double retrieval: if strict source filter removes everything,
+                        # fall back to the unfiltered scope-wide results.
+                        logger.info(
+                            "metric.search_source_filter_fallback_count=1 caller=%s source=%s",
+                            request.caller,
+                            request.source,
+                        )
+                        retrieved = original
+                    else:
+                        retrieved = filtered
 
                 dedup_enabled = bool(
                     _get_config_value(
