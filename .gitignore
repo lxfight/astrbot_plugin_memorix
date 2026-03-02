@@ -4,4 +4,3 @@ tests/
 # Python cache files
 __pycache__/
 *.py[cod]
-memorix/core/utils/__pycache__
