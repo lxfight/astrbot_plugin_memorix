@@ -306,7 +306,10 @@ class MemorixPlugin(Star):
         adapted = AstrbotEventAdapter.from_event(event, scope_key)
         start = time.perf_counter()
         try:
-            source = f"chat:{adapted.platform}:{adapted.session_id}"
+            scope_mode = str(getattr(self.scope_router, "mode", "") or "").strip().lower() or "group_global"
+            use_global_inject = scope_mode in {"platform_global"}
+            source = None if use_global_inject else f"chat:{adapted.platform}:{adapted.session_id}"
+            strict_source = bool(source) and not use_global_inject
 
             # top_k 从配置读取，不再硬编码
             inject_top_k = self._to_int(
@@ -322,7 +325,7 @@ class MemorixPlugin(Star):
                 group_id=adapted.group_id,
                 user_id=adapted.sender_id,
                 source=source,
-                strict_source=True,
+                strict_source=strict_source,
                 enforce_chat_filter=False,
             )
 
