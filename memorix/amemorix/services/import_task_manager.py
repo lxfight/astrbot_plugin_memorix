@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from amemorix.common.logging import get_logger
-from amemorix.context import AppContext
+from ..common.logging import get_logger
+from ..context import AppContext
 
 from .import_service import ImportService
 

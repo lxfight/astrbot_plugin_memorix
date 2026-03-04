@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional, Set, Tuple
 
 from astrbot.api import logger
-from core.embedding.api_adapter import EmbeddingAPIAdapter
-from core.retrieval import DualPathRetriever, DynamicThresholdFilter, SparseBM25Index
-from core.storage import GraphStore, MetadataStore, VectorStore
-from core.utils.person_profile_service import PersonProfileService
+from ..core.embedding.api_adapter import EmbeddingAPIAdapter
+from ..core.retrieval import DualPathRetriever, DynamicThresholdFilter, SparseBM25Index
+from ..core.storage import GraphStore, MetadataStore, VectorStore
+from ..core.utils.person_profile_service import PersonProfileService
 
 from .settings import AppSettings
 

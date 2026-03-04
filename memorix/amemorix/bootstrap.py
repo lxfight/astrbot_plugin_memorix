@@ -6,12 +6,12 @@ import pickle
 from pathlib import Path
 from typing import Any, Dict
 
-from core.embedding.api_adapter import create_embedding_api_adapter
-from core.retrieval.dual_path import DualPathRetriever, DualPathRetrieverConfig, FusionConfig
-from core.retrieval.sparse_bm25 import SparseBM25Config, SparseBM25Index
-from core.retrieval.threshold import DynamicThresholdFilter, ThresholdConfig, ThresholdMethod
-from core.storage import GraphStore, MetadataStore, QuantizationType, SparseMatrixFormat, VectorStore
-from core.utils.person_profile_service import PersonProfileService
+from ..core.embedding.api_adapter import create_embedding_api_adapter
+from ..core.retrieval.dual_path import DualPathRetriever, DualPathRetrieverConfig, FusionConfig
+from ..core.retrieval.sparse_bm25 import SparseBM25Config, SparseBM25Index
+from ..core.retrieval.threshold import DynamicThresholdFilter, ThresholdConfig, ThresholdMethod
+from ..core.storage import GraphStore, MetadataStore, QuantizationType, SparseMatrixFormat, VectorStore
+from ..core.utils.person_profile_service import PersonProfileService
 
 from ..storage.vector_numpy_store import NumpyCompatVectorStore
 from astrbot.api import logger

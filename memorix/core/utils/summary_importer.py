@@ -8,7 +8,7 @@ import json
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from amemorix.llm_client import LLMClient
+from ...amemorix.llm_client import LLMClient
 from astrbot.api import logger
 
 from ..embedding.api_adapter import EmbeddingAPIAdapter

@@ -8,8 +8,8 @@ import json
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from amemorix.context import AppContext
-from amemorix.services import (
+from .context import AppContext
+from .services import (
     ImportService,
     MemoryService,
     PersonProfileApiService,

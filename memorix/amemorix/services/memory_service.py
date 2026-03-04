@@ -5,9 +5,9 @@ from __future__ import annotations
 import datetime
 from typing import Any, Dict, List
 
-from core.utils.search_execution_service import SearchExecutionRequest, SearchExecutionService
+from ...core.utils.search_execution_service import SearchExecutionRequest, SearchExecutionService
 
-from amemorix.context import AppContext
+from ..context import AppContext
 
 
 class MemoryService:

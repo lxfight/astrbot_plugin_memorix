@@ -6,12 +6,12 @@ import inspect
 import json
 from typing import Any, Dict, List
 
-from amemorix.context import AppContext
-from amemorix.llm_client import LLMClient
-from amemorix.settings import resolve_openapi_endpoint_config
 from astrbot.api import logger
-from core.utils.summary_importer import SummaryImporter
-from providers.astrbot_provider_bridge import AstrBotLLMClient
+from ...core.utils.summary_importer import SummaryImporter
+from ...providers.astrbot_provider_bridge import AstrBotLLMClient
+from ..context import AppContext
+from ..llm_client import LLMClient
+from ..settings import resolve_openapi_endpoint_config
 
 
 class SummaryService:

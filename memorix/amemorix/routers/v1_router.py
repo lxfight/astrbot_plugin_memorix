@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
-from amemorix.services import (
+from ..services import (
     DeleteService,
     MemoryService,
     PersonProfileApiService,

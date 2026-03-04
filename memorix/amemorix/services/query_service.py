@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from amemorix.context import AppContext
-from core.utils.search_execution_service import (
+from ...core.utils.search_execution_service import (
     SearchExecutionRequest,
     SearchExecutionService,
 )
-from core.utils.time_parser import parse_query_time_range
+from ...core.utils.time_parser import parse_query_time_range
+from ..context import AppContext
 
 
 class QueryService:

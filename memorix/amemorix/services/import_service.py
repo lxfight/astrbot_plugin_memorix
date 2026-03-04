@@ -7,11 +7,11 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.storage import KnowledgeType, detect_knowledge_type
-from core.utils.time_parser import normalize_time_meta
+from ...core.storage import KnowledgeType, detect_knowledge_type
+from ...core.utils.time_parser import normalize_time_meta
 
 from astrbot.api import logger
-from amemorix.context import AppContext
+from ..context import AppContext
 
 class ImportService:
     def __init__(self, ctx: AppContext):
@@ -229,4 +229,3 @@ class ImportService:
             if current:
                 out.append(current.strip())
         return out
-

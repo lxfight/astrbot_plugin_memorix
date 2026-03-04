@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 from typing import Any, Dict
 
-from core.utils.hash import compute_hash, normalize_text
+from ...core.utils.hash import compute_hash, normalize_text
 
-from amemorix.context import AppContext
+from ..context import AppContext
 
 
 class DeleteService:

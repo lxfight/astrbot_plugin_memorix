@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
 from astrbot.api import logger
-from amemorix.settings import mask_sensitive
+from ..amemorix.settings import mask_sensitive
 
 class EdgeWeightUpdate(BaseModel):
     source: str
@@ -100,7 +100,7 @@ class MemorixServer:
 
     def _setup_routes(self):
         def _build_person_profile_service():
-            from core.utils.person_profile_service import PersonProfileService
+            from ..core.utils.person_profile_service import PersonProfileService
 
             return PersonProfileService(
                 metadata_store=self.plugin.metadata_store,
@@ -432,7 +432,7 @@ class MemorixServer:
                        # 或者直接尝试按原样对 ID 进行哈希，假设它就是名称。
                        
                        # 更好的做法：尽可能使用实用程序。
-                       from core.utils.hash import compute_hash
+                       from ..core.utils.hash import compute_hash
                        
                        # GraphStore 节点名称保留了大小写，但为了键值进行了规范化。
                        # MetadataStore 的删除基于规范化哈希。
