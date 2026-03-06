@@ -43,9 +43,12 @@ class MemorixPlugin(Star):
         if bool(self.config.get("webui", {}).get("enabled", True)):
             try:
                 ui_scope = self._resolve_webui_scope()
-                state = await self.webui_server.start(scope_key=ui_scope)
-                if state.url:
-                    logger.info("[memorix] WebUI started at %s (scope=%s)", state.url, state.scope_key)
+                if ui_scope:
+                    state = await self.webui_server.start(scope_key=ui_scope)
+                    if state.url:
+                        logger.info("[memorix] WebUI started at %s (scope=%s)", state.url, state.scope_key)
+                else:
+                    logger.info("[memorix] WebUI start deferred until a concrete scope becomes active")
             except Exception as exc:
                 logger.error("[memorix] WebUI start failed: %s", exc, exc_info=True)
         logger.info("[memorix] initialize done")
@@ -72,7 +75,36 @@ class MemorixPlugin(Star):
         known_scopes = self.runtime_manager.get_known_scopes()
         if known_scopes:
             return str(known_scopes[-1])
-        return "aiocqhttp"
+        return ""
+
+    async def _ensure_webui_scope_ready(self, scope_key: str) -> None:
+        if not bool(self.config.get("webui", {}).get("enabled", True)):
+            return
+
+        configured = str(self.config.get("webui", {}).get("scope", "auto") or "auto").strip().lower()
+        if configured not in {"", "auto", "current", "event"}:
+            return
+
+        target_scope = str(scope_key or "").strip()
+        if not target_scope:
+            return
+
+        state = self.webui_server.state
+        if not state.url:
+            await self.webui_server.start(scope_key=target_scope)
+            logger.info("[memorix] WebUI auto-started at %s (scope=%s)", self.webui_server.state.url, self.webui_server.state.scope_key)
+            return
+
+        known_scopes = self.runtime_manager.get_known_scopes()
+        current_scope = str(state.scope_key or "").strip()
+        if current_scope in known_scopes:
+            return
+        if len(known_scopes) != 1 or target_scope not in known_scopes or current_scope == target_scope:
+            return
+
+        logger.info("[memorix] auto-switching webui scope: from=%s to=%s", current_scope or "<deferred>", target_scope)
+        self.webui_server.stop()
+        await self.webui_server.start(scope_key=target_scope)
 
     @staticmethod
     def _bool_cfg(config: Dict[str, Any], key: str, default: bool) -> bool:
@@ -335,6 +367,15 @@ class MemorixPlugin(Star):
             unified_msg_origin=adapted.unified_msg_origin,
             time_meta={"event_time": adapted.timestamp} if adapted.timestamp else None,
         )
+        try:
+            await self._ensure_webui_scope_ready(adapted.scope_key)
+        except Exception as exc:
+            logger.warning(
+                "[memorix] ensure webui scope ready failed: %s (%s)",
+                exc,
+                self._event_ctx_text(event, adapted.scope_key),
+                exc_info=True,
+            )
         logger.debug(
             "[memorix] ingested role=%s chars=%s %s",
             role,
