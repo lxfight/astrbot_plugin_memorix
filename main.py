@@ -535,6 +535,7 @@ class MemorixPlugin(Star):
 
     @filter.command("person_profile")
     async def person_profile_switch(self, event: AstrMessageEvent):
+        """设置当前对话里的人物信息开关。"""
         tokens = self._parse_direct_command_tokens(event.message_str, "person_profile")
         action = str(tokens[0]).strip().lower() if tokens else "status"
         if action not in {"on", "off", "status"}:
@@ -571,6 +572,7 @@ class MemorixPlugin(Star):
     @filter.command("person_profile_global")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def person_profile_global_switch(self, event: AstrMessageEvent):
+        """统一设置所有对话的人物信息开关。"""
         tokens = self._parse_direct_command_tokens(event.message_str, "person_profile_global")
         action = str(tokens[0]).strip().lower() if tokens else "status"
         self._log_cmd(event, "person_profile_global", action=action)
@@ -600,10 +602,12 @@ class MemorixPlugin(Star):
 
     @filter.command_group("mem")
     def mem(self):
+        """查看和管理记住的内容。"""
         pass
 
     @mem.command("status")
     async def mem_status(self, event: AstrMessageEvent):
+        """查看当前记忆状态。"""
         self._log_cmd(event, "status")
         scope_key = self._resolve_scope(event)
         data = await self.memory_service.status(scope_key=scope_key)
@@ -622,6 +626,7 @@ class MemorixPlugin(Star):
 
     @mem.command("query")
     async def mem_query(self, event: AstrMessageEvent, query: str = "", top_k: int = 10):
+        """按关键词查找记住的内容。"""
         resolved_top_k = self._to_int(top_k, 10)
         q = str(query or "").strip()
         tokens = self._parse_tail_tokens(event.message_str, "query")
@@ -655,6 +660,7 @@ class MemorixPlugin(Star):
         query: str = "",
         top_k: int = 10,
     ):
+        """按时间范围查找记住的内容。"""
         from_text = str(time_from or "").strip()
         to_text = str(time_to or "").strip()
         query_text = str(query or "").strip()
@@ -697,6 +703,7 @@ class MemorixPlugin(Star):
     @mem.command("protect")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def mem_protect(self, event: AstrMessageEvent, query_or_hash: str = "", hours: float = 24.0):
+        """临时保护指定内容不被清理。"""
         target = str(query_or_hash or "").strip()
         resolved_hours = self._to_float(hours, 24.0, min_value=0.1)
         tokens = self._parse_tail_tokens(event.message_str, "protect")
@@ -723,6 +730,7 @@ class MemorixPlugin(Star):
     @mem.command("reinforce")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def mem_reinforce(self, event: AstrMessageEvent, query_or_hash: str = ""):
+        """提高指定内容的保留优先级。"""
         target = str(query_or_hash or "").strip()
         parsed_target = self._parse_tail(event.message_str, "reinforce")
         if parsed_target:
@@ -742,6 +750,7 @@ class MemorixPlugin(Star):
     @mem.command("restore")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def mem_restore(self, event: AstrMessageEvent, hash_value: str = "", restore_type: str = "relation"):
+        """恢复已移除的内容。"""
         target = str(hash_value or "").strip()
         rtype = str(restore_type or "relation").strip() or "relation"
         tokens = self._parse_tail_tokens(event.message_str, "restore")
@@ -764,6 +773,7 @@ class MemorixPlugin(Star):
     @mem.command("delete_entity")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def mem_delete_entity(self, event: AstrMessageEvent, entity_name: str = ""):
+        """删除指定名称相关的内容。"""
         target = str(entity_name or "").strip()
         parsed = self._parse_tail(event.message_str, "delete_entity")
         if parsed:
@@ -786,6 +796,7 @@ class MemorixPlugin(Star):
 
     @mem.command("profile")
     async def mem_profile(self, event: AstrMessageEvent, person_keyword_or_id: str = "", top_k: int = 12):
+        """查看某个人的记录概况。"""
         scope_key = self._resolve_scope(event)
         keyword = str(person_keyword_or_id or "").strip()
         resolved_top_k = self._to_int(top_k, 12)
@@ -817,6 +828,7 @@ class MemorixPlugin(Star):
     @mem.command("profile_override")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def mem_profile_override(self, event: AstrMessageEvent, person_id: str = "", override_text: str = ""):
+        """手动修改某个人的记录概况。"""
         pid = str(person_id or "").strip()
         text = str(override_text or "").strip()
         tail = self._parse_tail(event.message_str, "profile_override")
@@ -840,6 +852,7 @@ class MemorixPlugin(Star):
     @mem.command("profile_clear")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def mem_profile_clear(self, event: AstrMessageEvent, person_id: str = ""):
+        """清除某个人的手动修改。"""
         pid = str(person_id or "").strip()
         parsed_pid = self._parse_tail(event.message_str, "profile_clear")
         if parsed_pid:
@@ -859,6 +872,7 @@ class MemorixPlugin(Star):
     @mem.command("profile_global")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def mem_profile_global(self, event: AstrMessageEvent, action: str = "status"):
+        """统一设置人物信息的全局开关。"""
         tokens = self._parse_tail_tokens(event.message_str, "profile_global")
         cmd_action = str(action or "").strip().lower()
         if tokens:
@@ -877,6 +891,7 @@ class MemorixPlugin(Star):
 
     @mem.command("summary_now")
     async def mem_summary_now(self, event: AstrMessageEvent, context_length: int = 50):
+        """整理当前对话的最近内容。"""
         resolved_context_length = self._to_int(context_length, 50)
         tokens = self._parse_tail_tokens(event.message_str, "summary_now")
         if tokens:
@@ -901,6 +916,7 @@ class MemorixPlugin(Star):
     @mem.command("summary_all")
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def mem_summary_all(self, event: AstrMessageEvent, context_length: int = 50, limit: int = 500):
+        """整理当前范围内的全部内容。"""
         resolved_context_length = self._to_int(context_length, 50)
         resolved_limit = self._to_int(limit, 500)
         tokens = self._parse_tail_tokens(event.message_str, "summary_all")
@@ -927,6 +943,7 @@ class MemorixPlugin(Star):
 
     @mem.command("ui")
     async def mem_ui(self, event: AstrMessageEvent):
+        """打开记忆管理页面。"""
         if not bool(self.config.get("webui", {}).get("enabled", True)):
             yield event.plain_result("WebUI 已禁用")
             return

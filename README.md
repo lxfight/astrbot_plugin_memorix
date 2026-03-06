@@ -326,6 +326,21 @@ data/plugin_data/astrbot_plugin_memorix/scopes/<scope_key>/
 
 </details>
 
+<details>
+<summary>在 group_global 模式下提示日志显示图已保存，但 WebUI 还是空白</summary>
+
+大概率是 WebUI 当前绑定的 `scope` 和你实际有数据的对话范围不一致。
+
+如果日志里已经出现 `graph saved`，但同时还有 `图为空，无法计算PageRank`，说明当前 WebUI 读到的那份图仍然是空的。
+
+建议在你要查看的那个群或私聊里按顺序执行：
+
+1. `/mem status`，确认当前返回的 `scope`
+2. `/mem ui`，让 WebUI 切换到当前对话范围
+3. 重新打开或刷新 WebUI 页面
+
+</details>
+
 ## 特别感谢
 
 - [ARC](https://github.com/A-Dawn)
