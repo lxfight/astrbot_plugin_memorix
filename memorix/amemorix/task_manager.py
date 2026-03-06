@@ -8,6 +8,8 @@ import json
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+from astrbot.api import logger
+
 from .context import AppContext
 from .services import (
     ImportService,
@@ -15,7 +17,6 @@ from .services import (
     PersonProfileApiService,
     SummaryService,
 )
-from astrbot.api import logger
 
 TASK_STATUS_QUEUED = "queued"
 TASK_STATUS_RUNNING = "running"
@@ -548,11 +549,28 @@ class TaskManager:
                 active_after = datetime.datetime.now().timestamp() - max(1.0, active_window_h * 3600.0)
                 limit = int(self.ctx.get_config("person_profile.max_refresh_per_cycle", 50))
                 top_k = int(self.ctx.get_config("person_profile.top_k_evidence", 12))
+                opt_in_required = bool(self.ctx.get_config("person_profile.opt_in_required", True))
+                default_enabled = bool(self.ctx.get_config("person_profile.default_injection_enabled", False))
+                global_enabled = bool(self.ctx.get_config("person_profile.global_injection_enabled", False))
 
-                pids = self.ctx.metadata_store.get_active_person_ids_for_enabled_switches(
-                    active_after=active_after,
-                    limit=limit,
-                )
+                if global_enabled:
+                    pids = self.ctx.metadata_store.get_active_person_ids(
+                        active_after=active_after,
+                        limit=limit,
+                    )
+                elif opt_in_required:
+                    pids = self.ctx.metadata_store.get_active_person_ids_for_enabled_switches(
+                        active_after=active_after,
+                        limit=limit,
+                    )
+                elif default_enabled:
+                    pids = self.ctx.metadata_store.get_active_person_ids(
+                        active_after=active_after,
+                        limit=limit,
+                    )
+                else:
+                    pids = []
+
                 for pid in pids:
                     try:
                         await self.person_service.query(

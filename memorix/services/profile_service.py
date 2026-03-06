@@ -63,6 +63,7 @@ class ProfileService:
         profile_enabled = bool(ctx.get_config("person_profile.enabled", True))
         opt_in_required = bool(ctx.get_config("person_profile.opt_in_required", True))
         default_enabled = bool(ctx.get_config("person_profile.default_injection_enabled", False))
+        global_enabled = bool(ctx.get_config("person_profile.global_injection_enabled", False))
 
         sid = str(session_id or "").strip()
         uid = str(user_id or "").strip()
@@ -70,7 +71,10 @@ class ProfileService:
         if sid and uid:
             stored_enabled = bool(ctx.metadata_store.get_person_profile_switch(sid, uid, default=default_enabled))
 
-        effective = profile_enabled and (stored_enabled if opt_in_required else default_enabled)
+        if profile_enabled and global_enabled:
+            effective = True
+        else:
+            effective = profile_enabled and (stored_enabled if opt_in_required else default_enabled)
         return {
             "success": True,
             "scope_key": scope_key,
@@ -79,6 +83,7 @@ class ProfileService:
             "person_profile_enabled": profile_enabled,
             "opt_in_required": opt_in_required,
             "default_injection_enabled": default_enabled,
+            "global_injection_enabled": global_enabled,
             "switch_enabled": stored_enabled,
             "effective_injection_enabled": effective,
         }

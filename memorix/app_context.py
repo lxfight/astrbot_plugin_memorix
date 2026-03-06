@@ -206,6 +206,48 @@ class ScopeRuntimeManager:
     def get_known_scopes(self) -> list[str]:
         return list(self._runtimes.keys())
 
+    def get_person_profile_policy(self) -> Dict[str, Any]:
+        person_cfg = self.plugin_config.get("person_profile", {})
+        if not isinstance(person_cfg, dict):
+            person_cfg = {}
+        return {
+            "enabled": bool(person_cfg.get("enabled", True)),
+            "opt_in_required": bool(person_cfg.get("opt_in_required", True)),
+            "default_injection_enabled": bool(person_cfg.get("default_injection_enabled", False)),
+            "global_injection_enabled": bool(person_cfg.get("global_injection_enabled", False)),
+            "known_scopes": list(self._runtimes.keys()),
+        }
+
+    async def apply_person_profile_policy(
+        self,
+        *,
+        global_injection_enabled: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        def _apply(cfg: Dict[str, Any]) -> None:
+            person_cfg = cfg.get("person_profile")
+            if not isinstance(person_cfg, dict):
+                person_cfg = {}
+                cfg["person_profile"] = person_cfg
+            if global_injection_enabled is not None:
+                person_cfg["global_injection_enabled"] = bool(global_injection_enabled)
+
+        async with self._lock:
+            _apply(self.plugin_config)
+            for runtime in self._runtimes.values():
+                _apply(runtime.settings.config)
+                runtime.context.config = runtime.settings.config
+
+        policy = self.get_person_profile_policy()
+        logger.info(
+            "person profile policy updated: enabled=%s opt_in_required=%s default_injection_enabled=%s global_injection_enabled=%s scopes=%s",
+            policy["enabled"],
+            policy["opt_in_required"],
+            policy["default_injection_enabled"],
+            policy["global_injection_enabled"],
+            len(policy["known_scopes"]),
+        )
+        return policy
+
     async def close_all(self) -> None:
         async with self._lock:
             runtimes = list(self._runtimes.values())

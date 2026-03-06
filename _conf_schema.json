@@ -272,7 +272,13 @@
       "default_injection_enabled": {
         "type": "bool",
         "description": "未手动设置时的默认画像注入状态",
-        "hint": "当用户未通过 /person_profile 命令手动设置开关时，是否默认开启画像注入。仅在 opt_in_required 为 true 时生效。设为 false（默认）表示不主动注入，需要用户自己开启。",
+        "hint": "当用户未通过 /person_profile 命令手动设置开关时，是否默认开启画像注入。opt_in_required=true 时作为“未设置用户”的默认值；opt_in_required=false 时作为全局默认行为。",
+        "default": false
+      },
+      "global_injection_enabled": {
+        "type": "bool",
+        "description": "启用全局人物画像注入",
+        "hint": "开启后将对所有会话强制注入人物画像（仍受 person_profile.enabled 总开关约束），不再要求用户在会话内手动开启。关闭后回退到 opt_in_required/default_injection_enabled 的常规策略。",
         "default": false
       },
       "profile_ttl_minutes": {

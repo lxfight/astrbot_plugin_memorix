@@ -2915,6 +2915,30 @@ class MetadataStore:
         cursor.execute(sql, tuple(params))
         return [str(row[0]) for row in cursor.fetchall() if row and row[0]]
 
+    def get_active_person_ids(
+        self,
+        active_after: Optional[float] = None,
+        limit: int = 200,
+    ) -> List[str]:
+        """获取活跃人物集合（不按注入开关过滤）。"""
+        cursor = self._conn.cursor()
+        sql = """
+            SELECT person_id, MAX(last_seen_at) AS last_seen
+            FROM person_profile_active_persons
+        """
+        params: List[Any] = []
+        if active_after is not None:
+            sql += " WHERE last_seen_at >= ?"
+            params.append(float(active_after))
+        sql += """
+            GROUP BY person_id
+            ORDER BY last_seen DESC
+            LIMIT ?
+        """
+        params.append(int(max(1, limit)))
+        cursor.execute(sql, tuple(params))
+        return [str(row[0]) for row in cursor.fetchall() if row and row[0]]
+
     def get_latest_person_profile_snapshot(self, person_id: str) -> Optional[Dict[str, Any]]:
         """获取人物最新画像快照。"""
         if not person_id:

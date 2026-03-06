@@ -21,6 +21,7 @@ from .memorix.webui import EmbeddedWebUIServer
 class MemorixPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
+        self._config_obj = config if hasattr(config, "save_config") else None
         self.config = dict(config or {})
         self.scope_router = ScopeRouter(mode=str(self.config.get("scope", {}).get("mode", "group_global")))
         self.runtime_manager = ScopeRuntimeManager(
@@ -236,6 +237,73 @@ class MemorixPlugin(Star):
             logger.info("[memorix] cmd=%s %s %s", command, ctx, detail)
         else:
             logger.info("[memorix] cmd=%s %s", command, ctx)
+
+    @staticmethod
+    def _person_profile_global_usage() -> str:
+        return "用法: /person_profile_global on|off|status 或 /mem profile_global on|off|status"
+
+    @staticmethod
+    def _person_profile_global_mode_enabled(policy: Dict[str, Any]) -> bool:
+        return bool(policy.get("enabled", True) and policy.get("global_injection_enabled", False))
+
+    def _sync_local_person_profile_policy(
+        self,
+        *,
+        global_injection_enabled: Optional[bool] = None,
+    ) -> None:
+        person_cfg = self.config.get("person_profile")
+        if not isinstance(person_cfg, dict):
+            person_cfg = {}
+            self.config["person_profile"] = person_cfg
+        if global_injection_enabled is not None:
+            person_cfg["global_injection_enabled"] = bool(global_injection_enabled)
+
+    def _persist_plugin_config(self) -> tuple[bool, str]:
+        cfg_obj = self._config_obj
+        if cfg_obj is None:
+            return False, "当前运行环境不支持插件配置落盘"
+        try:
+            cfg_obj.save_config(replace_config=dict(self.config))
+            return True, "配置已持久化到插件配置文件"
+        except Exception as exc:
+            logger.error("[memorix] persist plugin config failed: %s", exc, exc_info=True)
+            return False, f"配置落盘失败: {exc}"
+
+    async def _handle_person_profile_global_action(self, action: str) -> Dict[str, Any]:
+        act = str(action or "").strip().lower() or "status"
+        if act not in {"on", "off", "status"}:
+            raise ValueError(self._person_profile_global_usage())
+
+        if act == "on":
+            self._sync_local_person_profile_policy(
+                global_injection_enabled=True,
+            )
+            policy = await self.runtime_manager.apply_person_profile_policy(
+                global_injection_enabled=True,
+            )
+            policy["message"] = "已开启全局人物画像：将强制注入所有会话画像（仍受 person_profile.enabled 总开关约束）。"
+            persisted, persist_message = self._persist_plugin_config()
+            policy["persisted"] = persisted
+            policy["persist_message"] = persist_message
+        elif act == "off":
+            self._sync_local_person_profile_policy(
+                global_injection_enabled=False,
+            )
+            policy = await self.runtime_manager.apply_person_profile_policy(
+                global_injection_enabled=False,
+            )
+            policy["message"] = "已关闭全局人物画像：恢复为 opt_in/default 的常规策略。"
+            persisted, persist_message = self._persist_plugin_config()
+            policy["persisted"] = persisted
+            policy["persist_message"] = persist_message
+        else:
+            policy = self.runtime_manager.get_person_profile_policy()
+            policy["message"] = "当前为人物画像全局策略状态。"
+            policy["persisted"] = None
+            policy["persist_message"] = "status 查询不会修改配置文件"
+
+        policy["global_mode_enabled"] = self._person_profile_global_mode_enabled(policy)
+        return policy
 
     async def _ingest_event_message(self, event: AstrMessageEvent, role: str, text: str) -> None:
         adapted = AstrbotEventAdapter.from_event(event, self._resolve_scope(event))
@@ -458,6 +526,21 @@ class MemorixPlugin(Star):
         except Exception as exc:
             logger.error("[memorix] person_profile command failed: %s", exc, exc_info=True)
             yield event.plain_result(f"人物画像开关操作失败: {exc}")
+
+    @filter.command("person_profile_global")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def person_profile_global_switch(self, event: AstrMessageEvent):
+        tokens = self._parse_direct_command_tokens(event.message_str, "person_profile_global")
+        action = str(tokens[0]).strip().lower() if tokens else "status"
+        self._log_cmd(event, "person_profile_global", action=action)
+        try:
+            data = await self._handle_person_profile_global_action(action)
+            yield event.plain_result(to_pretty_text(data))
+        except ValueError as exc:
+            yield event.plain_result(str(exc))
+        except Exception as exc:
+            logger.error("[memorix] person_profile_global command failed: %s", exc, exc_info=True)
+            yield event.plain_result(f"全局人物画像开关操作失败: {exc}")
 
     @filter.on_llm_response()
     async def on_llm_response(self, event: AstrMessageEvent, resp):
@@ -731,6 +814,25 @@ class MemorixPlugin(Star):
         except Exception as exc:
             logger.error("[memorix] mem profile_clear failed: %s", exc, exc_info=True)
             yield event.plain_result(f"画像覆盖清除失败: {exc}")
+
+    @mem.command("profile_global")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def mem_profile_global(self, event: AstrMessageEvent, action: str = "status"):
+        tokens = self._parse_tail_tokens(event.message_str, "profile_global")
+        cmd_action = str(action or "").strip().lower()
+        if tokens:
+            cmd_action = str(tokens[0]).strip().lower()
+        if not cmd_action:
+            cmd_action = "status"
+        self._log_cmd(event, "profile_global", action=cmd_action)
+        try:
+            data = await self._handle_person_profile_global_action(cmd_action)
+            yield event.plain_result(to_pretty_text(data))
+        except ValueError as exc:
+            yield event.plain_result(str(exc))
+        except Exception as exc:
+            logger.error("[memorix] mem profile_global failed: %s", exc, exc_info=True)
+            yield event.plain_result(f"全局画像策略设置失败: {exc}")
 
     @mem.command("summary_now")
     async def mem_summary_now(self, event: AstrMessageEvent, context_length: int = 50):

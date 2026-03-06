@@ -153,6 +153,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enabled": True,
         "opt_in_required": True,
         "default_injection_enabled": False,
+        "global_injection_enabled": False,
         "profile_ttl_minutes": 360.0,
         "refresh_interval_minutes": 30,
         "active_window_hours": 72.0,
