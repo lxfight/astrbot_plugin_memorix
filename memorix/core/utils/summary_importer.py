@@ -116,15 +116,48 @@ class SummaryImporter:
                 return default
         return current
 
-    def _build_chat_text(self, messages: List[Dict[str, Any]]) -> str:
+    def _build_chat_text(self, messages: List[Dict[str, Any]], bot_name: str = "") -> str:
         lines: List[str] = []
+        now = time.time()
         for item in messages:
             role = str(item.get("role", "user") or "user")
             content = str(item.get("content", "") or "").strip()
             if not content:
                 continue
-            lines.append(f"{role}: {content}")
+            meta = item.get("metadata") or {}
+            sender_name = str(meta.get("sender_name", "") or "").strip()
+            if role == "assistant":
+                display_name = bot_name or "AI助手"
+            elif sender_name:
+                display_name = sender_name
+            else:
+                display_name = role
+            ts = item.get("timestamp") or item.get("created_at")
+            time_str = self._format_relative_time(ts, now) if ts else ""
+            if time_str:
+                lines.append(f"{time_str}, {display_name}: {content}")
+            else:
+                lines.append(f"{display_name}: {content}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_relative_time(ts: Any, now: float) -> str:
+        try:
+            diff = now - float(ts)
+            if diff < 0:
+                diff = 0
+            if diff < 60:
+                return "刚刚"
+            if diff < 3600:
+                return f"{int(diff // 60)}分钟前"
+            if diff < 86400:
+                return f"{int(diff // 3600)}小时前"
+            if diff < 604800:
+                return f"{int(diff // 86400)}天前"
+            from datetime import datetime
+            return datetime.fromtimestamp(float(ts)).strftime("%m月%d日")
+        except (TypeError, ValueError):
+            return ""
 
     def _fallback_summary(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         merged = " ".join(str(m.get("content", "") or "").strip() for m in messages if str(m.get("content", "")).strip())
@@ -154,14 +187,15 @@ class SummaryImporter:
             logger.debug("resolve AstrBot persona failed: %s", exc)
         return "AI助手", ""
 
-    async def _generate_summary_payload(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def _generate_summary_payload(self, messages: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         if not messages:
             return self._fallback_summary(messages)
 
-        history = self._build_chat_text(messages)
-
         # 从 AstrBot 人格系统获取 bot 名称和人设
         bot_name, persona_text = await self._resolve_persona()
+
+        history = self._build_chat_text(messages, bot_name=bot_name)
+
         if persona_text:
             personality_context = f"你的人设信息如下：{persona_text}"
         else:
@@ -175,11 +209,9 @@ class SummaryImporter:
 
         if self.llm_client is None:
             logger.error(
-                "LLM client is None — summary will fallback to raw text "
-                "with NO entities/relations. Graph will NOT grow! "
-                "Please check provider / LLM configuration.",
+                "LLM client is None — cannot generate summary, skipping import.",
             )
-            return self._fallback_summary(messages)
+            return None
 
         try:
             ok, payload, raw = await self.llm_client.complete_json(prompt, temperature=0.2, max_tokens=1200)
@@ -197,12 +229,11 @@ class SummaryImporter:
                     except json.JSONDecodeError:
                         pass
         except Exception as exc:
-            logger.error(
-                "Summary LLM call failed (entities/relations will be EMPTY, "
-                "graph will NOT grow): %s", exc, exc_info=True,
-            )
+            logger.error("Summary LLM call failed, skipping import: %s", exc, exc_info=True)
+            return None
 
-        return self._fallback_summary(messages)
+        logger.error("Summary LLM returned unparseable response, skipping import.")
+        return None
 
     async def import_from_transcript(
         self,
@@ -268,6 +299,8 @@ class SummaryImporter:
                 return False, "未找到可总结的聊天记录"
 
             payload = await self._generate_summary_payload(transcript_messages)
+            if payload is None:
+                return False, "LLM 调用失败，跳过本次导入"
 
             summary = str(payload.get("summary", "") or "").strip()
             entities = payload.get("entities", [])

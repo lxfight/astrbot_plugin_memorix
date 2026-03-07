@@ -365,6 +365,8 @@ class MemorixPlugin(Star):
             group_id=adapted.group_id,
             platform=adapted.platform,
             unified_msg_origin=adapted.unified_msg_origin,
+            sender_name=adapted.sender_name,
+            timestamp=adapted.timestamp,
             time_meta={"event_time": adapted.timestamp} if adapted.timestamp else None,
         )
         try:
