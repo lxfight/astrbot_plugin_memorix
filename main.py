@@ -354,6 +354,10 @@ class MemorixPlugin(Star):
             platform=adapted.platform,
             sender_id=adapted.sender_id,
             sender_name=adapted.sender_name or adapted.sender_id,
+            group_id=adapted.group_id,
+            session_id=adapted.session_id,
+            unified_msg_origin=adapted.unified_msg_origin,
+            timestamp=float(adapted.timestamp) if adapted.timestamp else None,
         )
         await self.ingest_service.ingest_message(
             scope_key=adapted.scope_key,
@@ -366,6 +370,8 @@ class MemorixPlugin(Star):
             platform=adapted.platform,
             unified_msg_origin=adapted.unified_msg_origin,
             sender_name=adapted.sender_name,
+            message_id=adapted.message_id,
+            role_origin=role,
             timestamp=adapted.timestamp,
             time_meta={"event_time": adapted.timestamp} if adapted.timestamp else None,
         )
@@ -399,6 +405,12 @@ class MemorixPlugin(Star):
             return
         try:
             await self._ingest_event_message(event, "user", text)
+            if not self._bool_cfg(self.config, "summarization.auto_import.after_reply_only", True):
+                adapted = AstrbotEventAdapter.from_event(event, self._resolve_scope(event))
+                await self.summary_service.maybe_enqueue_auto_summary(
+                    scope_key=adapted.scope_key,
+                    session_id=adapted.session_id,
+                )
         except Exception as exc:
             logger.warning(
                 "[memorix] ingest user message failed: %s (%s)",
@@ -428,7 +440,7 @@ class MemorixPlugin(Star):
                 default=10, min_value=1,
             )
 
-            search_result = await self.query_service.search(
+            search_result = await self.query_service.auto_search(
                 scope_key=scope_key,
                 query=query,
                 top_k=inject_top_k,
@@ -522,8 +534,9 @@ class MemorixPlugin(Star):
             setattr(req, "system_prompt", f"{current_sp}\n\n{injected}" if current_sp else injected)
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             logger.debug(
-                "[memorix] llm request injected blocks=%s elapsed_ms=%s %s",
+                "[memorix] llm request injected blocks=%s query_type=%s elapsed_ms=%s %s",
                 len(block_parts),
+                str(search_result.get("query_type", "") or "search"),
                 elapsed_ms,
                 self._event_ctx_text(event, scope_key),
             )
@@ -592,8 +605,19 @@ class MemorixPlugin(Star):
         text = str(getattr(resp, "completion_text", "") or "").strip()
         if not text:
             return
+        adapted = AstrbotEventAdapter.from_event(event, self._resolve_scope(event))
         try:
             await self._ingest_event_message(event, "assistant", text)
+            auto_summary_result = await self.summary_service.maybe_enqueue_auto_summary(
+                scope_key=adapted.scope_key,
+                session_id=adapted.session_id,
+            )
+            if auto_summary_result.get("queued"):
+                logger.debug(
+                    "[memorix] auto summary queued task=%s %s",
+                    str(auto_summary_result.get("task_id", "") or ""),
+                    self._event_ctx_text(event, adapted.scope_key),
+                )
         except Exception as exc:
             logger.warning(
                 "[memorix] ingest llm response failed: %s (%s)",

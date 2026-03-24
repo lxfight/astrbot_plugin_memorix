@@ -66,6 +66,31 @@ class QueryService:
             enforce_chat_filter=enforce_chat_filter,
         )
 
+    async def auto_search(
+        self,
+        *,
+        scope_key: str,
+        query: str,
+        top_k: Optional[int] = None,
+        stream_id: Optional[str] = None,
+        group_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        source: Optional[str] = None,
+        strict_source: bool = False,
+        enforce_chat_filter: bool = False,
+    ) -> Dict[str, Any]:
+        runtime = await self.runtime_manager.get_runtime(scope_key)
+        return await BaseQueryService(runtime.context).auto_search(
+            query=query,
+            top_k=top_k,
+            stream_id=stream_id,
+            group_id=group_id,
+            user_id=user_id,
+            source=source,
+            strict_source=strict_source,
+            enforce_chat_filter=enforce_chat_filter,
+        )
+
     async def stats(self, *, scope_key: str) -> Dict[str, Any]:
         runtime = await self.runtime_manager.get_runtime(scope_key)
         return await BaseQueryService(runtime.context).stats()

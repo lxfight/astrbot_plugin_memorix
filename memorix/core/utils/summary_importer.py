@@ -8,9 +8,9 @@ import json
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from ...amemorix.llm_client import LLMClient
 from astrbot.api import logger
 
+from ...amemorix.llm_client import LLMClient
 from ..embedding.api_adapter import EmbeddingAPIAdapter
 from ..storage import (
     GraphStore,
@@ -126,10 +126,13 @@ class SummaryImporter:
                 continue
             meta = item.get("metadata") or {}
             sender_name = str(meta.get("sender_name", "") or "").strip()
+            sender_id = str(meta.get("sender_id", "") or "").strip()
             if role == "assistant":
-                display_name = bot_name or "AI助手"
+                display_name = bot_name or sender_name or "AI助手"
             elif sender_name:
                 display_name = sender_name
+            elif sender_id:
+                display_name = sender_id
             else:
                 display_name = role
             ts = item.get("timestamp") or item.get("created_at")

@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
+from astrbot.api import logger
 from fastapi import FastAPI
 
 from ..webui.routes_compat import MemorixServer
-
 from .auth import BearerAuthMiddleware
 from .bootstrap import build_context
-from astrbot.api import logger
-
+from .common import register_lifecycle_handler
 from .common.logging import setup_logging
 from .import_write_guard import ImportWriteGuardMiddleware
 from .routers.v1_router import router as v1_router
 from .services.import_task_manager import ImportTaskManager
 from .settings import AppSettings
 from .task_manager import TaskManager
+
 
 def create_app(*, settings: AppSettings) -> FastAPI:
     setup_logging("DEBUG" if bool(settings.get("advanced.debug", False)) else "INFO")
@@ -54,7 +54,6 @@ def create_app(*, settings: AppSettings) -> FastAPI:
             )
         }
 
-    @app.on_event("shutdown")
     async def _shutdown():
         try:
             await app.state.import_task_manager.stop()
@@ -69,7 +68,6 @@ def create_app(*, settings: AppSettings) -> FastAPI:
         except Exception as exc:
             logger.warning("Shutdown close failed: %s", exc)
 
-    @app.on_event("startup")
     async def _startup():
         try:
             await app.state.import_task_manager.start()
@@ -79,5 +77,8 @@ def create_app(*, settings: AppSettings) -> FastAPI:
             await app.state.task_manager.start()
         except Exception as exc:
             logger.warning("Task manager start failed: %s", exc)
+
+    register_lifecycle_handler(app, "shutdown", _shutdown)
+    register_lifecycle_handler(app, "startup", _startup)
 
     return app

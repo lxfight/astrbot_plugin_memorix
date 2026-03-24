@@ -169,6 +169,25 @@
             "default": 10
           }
         }
+      },
+      "auto_route": {
+        "type": "object",
+        "description": "自动检索路由 —— 根据提问内容自动选择普通检索、时间检索或混合检索",
+        "hint": "开启后，插件会在 LLM 注入记忆前先判断当前问题是否包含明确时间意图。纯回忆问题走时间检索，时间+主题同时存在时走混合检索，其余保持普通语义检索。",
+        "items": {
+          "enabled": {
+            "type": "bool",
+            "description": "启用自动检索路由",
+            "hint": "关闭后将始终按普通语义检索处理，不再自动切换到 time/hybrid。",
+            "default": true
+          },
+          "enable_time_intent": {
+            "type": "bool",
+            "description": "启用自然语言时间意图识别",
+            "hint": "开启后，可识别“昨天”“上周”“这个月”“从昨天到今天”等常见中文时间表达，并自动构造时间窗口。",
+            "default": true
+          }
+        }
       }
     }
   },
@@ -332,6 +351,18 @@
         "default": "hybrid",
         "options": ["transcript", "astrbot", "hybrid"]
       },
+      "chat_provider_id": {
+        "type": "string",
+        "description": "总结专用聊天 Provider ID",
+        "hint": "仅在启用 AstrBot 原生 Provider Bridge 时生效。填写后，总结任务会优先使用这里指定的 Provider，而不会影响日常聊天所用的模型。",
+        "default": ""
+      },
+      "model_name": {
+        "type": "string",
+        "description": "总结专用模型名",
+        "hint": "仅在走 OpenAI-compatible 回退链路时生效。可将“聊天模型”和“总结模型”拆开配置，让总结更稳定、格式更可控。",
+        "default": ""
+      },
       "context_length": {
         "type": "int",
         "description": "总结上下文消息条数",
@@ -344,6 +375,37 @@
         "hint": "narrative（叙事型）：按时间线梳理对话脉络，适合日常闲聊；factual（事实型）：提取关键事实和结论，适合信息密度高的对话；mixed（混合型）：同时提取叙事和事实；structured（结构化）：生成结构化的知识条目；auto（自动）：由 LLM 自动判断最适合的类型。",
         "default": "narrative",
         "options": ["narrative", "factual", "mixed", "structured", "auto"]
+      },
+      "auto_import": {
+        "type": "object",
+        "description": "自动总结 —— 在对话进行中按条件自动入库",
+        "hint": "自动总结采用保守策略：只有新增消息达到阈值、未命中冷却时间、且满足触发时机时才会排队执行，避免每轮回复都触发总结。",
+        "items": {
+          "enabled": {
+            "type": "bool",
+            "description": "启用自动总结",
+            "hint": "关闭后仅保留手动总结和定时批量总结。",
+            "default": true
+          },
+          "after_reply_only": {
+            "type": "bool",
+            "description": "仅在成功回复后触发自动总结",
+            "hint": "开启后，自动总结只会在机器人完成一次有效回复后检查触发条件；关闭后，用户消息写入后也可参与触发。",
+            "default": true
+          },
+          "min_new_messages": {
+            "type": "int",
+            "description": "触发自动总结所需的最少新增消息数",
+            "hint": "自上次总结后，当前会话至少新增多少条 transcript 消息才允许自动总结。值越大越保守，默认 12。",
+            "default": 12
+          },
+          "cooldown_minutes": {
+            "type": "int",
+            "description": "自动总结冷却时间（分钟）",
+            "hint": "同一会话两次自动总结之间至少间隔多久。用于避免高频聊天反复触发总结，默认 30 分钟。",
+            "default": 30
+          }
+        }
       }
     }
   },

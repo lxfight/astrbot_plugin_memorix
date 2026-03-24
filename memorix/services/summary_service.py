@@ -12,6 +12,15 @@ class SummaryService:
     def __init__(self, runtime_manager: ScopeRuntimeManager):
         self.runtime_manager = runtime_manager
 
+    async def maybe_enqueue_auto_summary(
+        self,
+        *,
+        scope_key: str,
+        session_id: str,
+    ) -> Dict[str, Any]:
+        runtime = await self.runtime_manager.get_runtime(scope_key)
+        return await runtime.task_manager.maybe_enqueue_auto_summary(session_id=session_id)
+
     async def summarize_session(
         self,
         *,

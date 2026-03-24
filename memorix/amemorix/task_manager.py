@@ -39,6 +39,7 @@ class TaskManager:
         self._workers: List[asyncio.Task] = []
         self._stopping = False
         self._bulk_summary_lock = asyncio.Lock()
+        self._pending_auto_summary_sessions: set[str] = set()
 
     async def start(self) -> None:
         self._stopping = False
@@ -77,6 +78,105 @@ class TaskManager:
         task = self.ctx.metadata_store.create_async_task(task_id=task_id, task_type="summary", payload=payload)
         await self.summary_queue.put((task_id, payload))
         return task
+
+    def _auto_summary_enabled(self) -> bool:
+        return bool(self.ctx.get_config("summarization.enabled", True)) and bool(
+            self.ctx.get_config("summarization.auto_import.enabled", True)
+        )
+
+    def _auto_summary_context_length(self) -> int:
+        return max(1, int(self.ctx.get_config("summarization.context_length", 50) or 50))
+
+    def _count_new_transcript_messages(
+        self,
+        *,
+        session_id: str,
+        last_message_created_at: Optional[float],
+    ) -> Tuple[int, Optional[float]]:
+        conn = self.ctx.metadata_store._conn
+        if conn is None or not session_id:
+            return 0, None
+
+        cursor = conn.cursor()
+        if last_message_created_at is None:
+            cursor.execute(
+                """
+                SELECT COUNT(*), MAX(created_at)
+                FROM transcript_messages
+                WHERE session_id = ?
+                """,
+                (str(session_id),),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COUNT(*), MAX(created_at)
+                FROM transcript_messages
+                WHERE session_id = ? AND created_at > ?
+                """,
+                (str(session_id), float(last_message_created_at)),
+            )
+        row = cursor.fetchone() or (0, None)
+        return int(row[0] or 0), (float(row[1]) if row[1] is not None else None)
+
+    async def maybe_enqueue_auto_summary(self, *, session_id: str) -> Dict[str, Any]:
+        sid = str(session_id or "").strip()
+        if not sid:
+            return {"queued": False, "reason": "empty_session"}
+        if not self._auto_summary_enabled():
+            return {"queued": False, "reason": "disabled"}
+        if sid in self._pending_auto_summary_sessions:
+            return {"queued": False, "reason": "already_pending"}
+
+        transcript_session = self.ctx.metadata_store.get_transcript_session(sid)
+        if not transcript_session:
+            return {"queued": False, "reason": "session_not_found"}
+
+        session_meta = transcript_session.get("metadata") if isinstance(transcript_session, dict) else {}
+        if not isinstance(session_meta, dict):
+            session_meta = {}
+
+        group_id = str(session_meta.get("group_id", "") or "").strip() or None
+        user_id = str(session_meta.get("user_id", "") or "").strip() or None
+        if not self.ctx.is_chat_enabled(stream_id=sid, group_id=group_id, user_id=user_id):
+            return {"queued": False, "reason": "chat_filtered"}
+
+        summary_state = self.ctx.metadata_store.get_transcript_summary_state(sid) or {}
+        cooldown_minutes = float(self.ctx.get_config("summarization.auto_import.cooldown_minutes", 30) or 30)
+        cooldown_seconds = max(0.0, cooldown_minutes * 60.0)
+        last_summary_at = summary_state.get("last_summary_at")
+        now_ts = datetime.datetime.now().timestamp()
+        if last_summary_at is not None:
+            try:
+                if (now_ts - float(last_summary_at)) < cooldown_seconds:
+                    return {"queued": False, "reason": "cooldown"}
+            except (TypeError, ValueError):
+                pass
+
+        new_message_count, last_message_created_at = self._count_new_transcript_messages(
+            session_id=sid,
+            last_message_created_at=summary_state.get("last_message_created_at"),
+        )
+        min_new_messages = max(1, int(self.ctx.get_config("summarization.auto_import.min_new_messages", 12) or 12))
+        if new_message_count < min_new_messages:
+            return {"queued": False, "reason": "insufficient_new_messages", "new_message_count": new_message_count}
+
+        payload = {
+            "session_id": sid,
+            "messages": [],
+            "source": f"chat_summary:{sid}",
+            "context_length": self._auto_summary_context_length(),
+            "persist_messages": False,
+            "auto_import": True,
+            "last_message_created_at": last_message_created_at,
+        }
+        task = await self.enqueue_summary_task(payload)
+        self._pending_auto_summary_sessions.add(sid)
+        return {
+            "queued": True,
+            "task_id": str(task.get("task_id", "") or ""),
+            "new_message_count": new_message_count,
+        }
 
     async def run_bulk_summary_import(
         self,
@@ -142,6 +242,7 @@ class TaskManager:
         while not self._stopping:
             task_id = ""
             dequeued = False
+            payload: Dict[str, Any] = {}
             try:
                 task_id, payload = await self.summary_queue.get()
                 dequeued = True
@@ -193,6 +294,9 @@ class TaskManager:
                     )
                 logger.error("Summary worker %s failed task %s: %s", worker_idx, task_id, exc, exc_info=True)
             finally:
+                session_id = str(payload.get("session_id", "") or "").strip()
+                if session_id and bool(payload.get("auto_import", False)):
+                    self._pending_auto_summary_sessions.discard(session_id)
                 if dequeued:
                     self.summary_queue.task_done()
 

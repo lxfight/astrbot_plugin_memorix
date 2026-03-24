@@ -58,6 +58,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "default_top_k": 10,
             "max_scan": 1000,
         },
+        "auto_route": {
+            "enabled": True,
+            "enable_time_intent": True,
+        },
         "search": {
             "smart_fallback": {"enabled": True, "threshold": 0.6},
             "safe_content_dedup": {"enabled": True},
@@ -141,9 +145,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "summarization": {
         "enabled": True,
         "source_mode": "hybrid",
+        "chat_provider_id": "",
+        "model_name": "",
         "context_length": 50,
         "include_personality": True,
         "default_knowledge_type": "narrative",
+        "auto_import": {
+            "enabled": True,
+            "after_reply_only": True,
+            "min_new_messages": 12,
+            "cooldown_minutes": 30,
+        },
     },
     "schedule": {
         "enabled": True,

@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional, Set
 from astrbot.api import logger
 
 from ..amemorix.auth import BearerAuthMiddleware
+from ..amemorix.common import register_lifecycle_handler
 from ..amemorix.import_write_guard import ImportWriteGuardMiddleware
 from ..amemorix.routers.v1_router import router as v1_router
 from ..amemorix.services import ImportService, SummaryService
@@ -265,8 +266,8 @@ class EmbeddedWebUIServer:
                     except Exception as exc:
                         logger.warning("webui legacy task manager stop failed: %s", exc)
 
-            app.add_event_handler("startup", _startup_managers)
-            app.add_event_handler("shutdown", _shutdown_managers)
+            register_lifecycle_handler(app, "startup", _startup_managers)
+            register_lifecycle_handler(app, "shutdown", _shutdown_managers)
             app.state._memorix_import_hooks_registered = True
 
         server.start()

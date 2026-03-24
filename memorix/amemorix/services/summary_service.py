@@ -7,8 +7,9 @@ import json
 from typing import Any, Dict, List
 
 from astrbot.api import logger
+
 from ...core.utils.summary_importer import SummaryImporter
-from ...providers.astrbot_provider_bridge import AstrBotLLMClient
+from ...providers.astrbot_provider_bridge import AstrBotLLMClient, AstrBotProviderBridge
 from ..context import AppContext
 from ..llm_client import LLMClient
 from ..settings import resolve_openapi_endpoint_config
@@ -17,25 +18,7 @@ from ..settings import resolve_openapi_endpoint_config
 class SummaryService:
     def __init__(self, ctx: AppContext):
         self.ctx = ctx
-        provider_bridge = getattr(self.ctx, "provider_bridge", None)
-        if provider_bridge is not None and getattr(provider_bridge, "enabled", False):
-            retries = int(self.ctx.get_config("embedding.retry.max_attempts", 3) or 3)
-            self.llm_client = AstrBotLLMClient(provider_bridge=provider_bridge, max_retries=max(1, retries))
-            logger.info("summary service uses AstrBot native chat provider")
-        else:
-            endpoint_cfg = resolve_openapi_endpoint_config(self.ctx.config, section="embedding")
-            self.llm_client = LLMClient(
-                base_url=str(endpoint_cfg.get("base_url", "")),
-                api_key=str(endpoint_cfg.get("api_key", "")),
-                model=str(
-                    endpoint_cfg.get("chat_model", "")
-                    or endpoint_cfg.get("model", "")
-                    or "gpt-4o-mini"
-                ),
-                timeout_seconds=float(endpoint_cfg.get("timeout_seconds", 60) or 60),
-                max_retries=int(endpoint_cfg.get("max_retries", 3) or 3),
-            )
-            logger.warning("summary service fallback to OpenAI-compatible client (provider bridge unavailable)")
+        self.llm_client = self._build_summary_llm_client()
         self.importer = SummaryImporter(
             vector_store=self.ctx.vector_store,
             graph_store=self.ctx.graph_store,
@@ -44,6 +27,44 @@ class SummaryService:
             plugin_config=self.ctx.config,
             llm_client=self.llm_client,
             astrbot_context=self._resolve_astrbot_context(),
+        )
+
+    def _build_summary_llm_client(self) -> Any:
+        provider_bridge = getattr(self.ctx, "provider_bridge", None)
+        if provider_bridge is not None and getattr(provider_bridge, "enabled", False):
+            retries = int(self.ctx.get_config("embedding.retry.max_attempts", 3) or 3)
+            summary_provider_id = str(self.ctx.get_config("summarization.chat_provider_id", "") or "").strip()
+            selected_bridge = provider_bridge
+            if summary_provider_id:
+                selected_bridge = AstrBotProviderBridge(
+                    astrbot_context=getattr(provider_bridge, "_context", None),
+                    chat_provider_id=summary_provider_id,
+                    embedding_provider_id=str(getattr(provider_bridge, "embedding_provider_id", "") or ""),
+                )
+            logger.info(
+                "summary service uses AstrBot native chat provider: provider_id=%s",
+                summary_provider_id or str(getattr(selected_bridge, "chat_provider_id", "") or "<session-default>"),
+            )
+            return AstrBotLLMClient(provider_bridge=selected_bridge, max_retries=max(1, retries))
+
+        endpoint_cfg = resolve_openapi_endpoint_config(self.ctx.config, section="embedding")
+        configured_model = str(self.ctx.get_config("summarization.model_name", "") or "").strip()
+        selected_model = (
+            configured_model
+            or str(endpoint_cfg.get("chat_model", "") or "")
+            or str(endpoint_cfg.get("model", "") or "")
+            or "gpt-4o-mini"
+        )
+        logger.warning(
+            "summary service fallback to OpenAI-compatible client: model=%s",
+            selected_model,
+        )
+        return LLMClient(
+            base_url=str(endpoint_cfg.get("base_url", "")),
+            api_key=str(endpoint_cfg.get("api_key", "")),
+            model=selected_model,
+            timeout_seconds=float(endpoint_cfg.get("timeout_seconds", 60) or 60),
+            max_retries=int(endpoint_cfg.get("max_retries", 3) or 3),
         )
 
     def _cfg(self, key: str, default: Any = None) -> Any:
@@ -85,6 +106,35 @@ class SummaryService:
                 return SummaryService._content_to_text(value.get("parts"))
         return str(value).strip()
 
+    @staticmethod
+    def _merge_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
+        metadata = item.get("metadata", {})
+        merged = dict(metadata) if isinstance(metadata, dict) else {}
+
+        for key in (
+            "sender_name",
+            "sender_id",
+            "group_id",
+            "platform",
+            "session_id",
+            "unified_msg_origin",
+            "message_id",
+            "role_origin",
+        ):
+            value = item.get(key)
+            if value not in {None, ""}:
+                merged.setdefault(key, value)
+
+        sender = item.get("sender")
+        if isinstance(sender, dict):
+            sender_name = sender.get("nickname") or sender.get("name")
+            sender_id = sender.get("id") or sender.get("user_id")
+            if sender_name:
+                merged.setdefault("sender_name", sender_name)
+            if sender_id:
+                merged.setdefault("sender_id", sender_id)
+        return merged
+
     @classmethod
     def _normalize_message(cls, item: Any) -> Dict[str, Any]:
         if not isinstance(item, dict):
@@ -113,7 +163,7 @@ class SummaryService:
             "role": role,
             "content": content,
             "timestamp": item.get("timestamp") or item.get("time") or item.get("ts"),
-            "metadata": item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {},
+            "metadata": cls._merge_metadata(item),
         }
 
     @classmethod
@@ -178,6 +228,33 @@ class SummaryService:
             deduped.append(item)
         return deduped
 
+    def _transcript_session_defaults(self, session_id: str) -> Dict[str, Any]:
+        session = self.ctx.metadata_store.get_transcript_session(session_id)
+        metadata = session.get("metadata") if isinstance(session, dict) else {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        defaults = {
+            "session_id": str(session_id or "").strip(),
+            "group_id": str(metadata.get("group_id", "") or "").strip(),
+            "platform": str(metadata.get("platform", "") or "").strip(),
+            "unified_msg_origin": str(metadata.get("unified_msg_origin", "") or "").strip(),
+        }
+        return {key: value for key, value in defaults.items() if value}
+
+    @staticmethod
+    def _apply_message_defaults(messages: List[Dict[str, Any]], defaults: Dict[str, Any]) -> List[Dict[str, Any]]:
+        if not defaults:
+            return messages
+        normalized: List[Dict[str, Any]] = []
+        for item in messages:
+            row = dict(item)
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            merged_meta = dict(defaults)
+            merged_meta.update(metadata)
+            row["metadata"] = merged_meta
+            normalized.append(row)
+        return normalized
+
     async def _fetch_astrbot_messages(self, *, session_id: str, context_length: int) -> List[Dict[str, Any]]:
         astrbot_ctx = self._resolve_astrbot_context()
         if astrbot_ctx is None:
@@ -204,6 +281,7 @@ class SummaryService:
                 history = getattr(conversation, "history", None) if conversation is not None else None
                 messages = self._normalize_messages(history, context_length)
                 if messages:
+                    messages = self._apply_message_defaults(messages, self._transcript_session_defaults(session_id))
                     logger.info(
                         "summary source selected: astrbot history, session=%s umo=%s messages=%s",
                         session_id,
@@ -242,6 +320,10 @@ class SummaryService:
                 limit=max(1, context_length),
             )
             if transcript_messages:
+                transcript_messages = self._apply_message_defaults(
+                    transcript_messages,
+                    self._transcript_session_defaults(session_id),
+                )
                 logger.info(
                     "summary source selected: transcript history, session=%s messages=%s",
                     session_id,

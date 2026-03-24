@@ -25,6 +25,8 @@ class IngestService:
         platform: str = "",
         unified_msg_origin: str = "",
         sender_name: str = "",
+        message_id: str = "",
+        role_origin: str = "",
         timestamp: float = 0,
         time_meta: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
@@ -53,9 +55,19 @@ class IngestService:
         ts_val = float(timestamp) if timestamp else None
         if ts_val:
             msg_record["timestamp"] = ts_val
-        name = str(sender_name or "").strip()
-        if name:
-            msg_record["metadata"] = {"sender_name": name}
+        msg_meta = {
+            "sender_name": str(sender_name or "").strip(),
+            "sender_id": str(user_id or "").strip(),
+            "group_id": str(group_id or "").strip(),
+            "platform": str(platform or "").strip(),
+            "session_id": session,
+            "unified_msg_origin": str(unified_msg_origin or "").strip(),
+            "message_id": str(message_id or "").strip(),
+            "role_origin": str(role_origin or role or "").strip(),
+        }
+        filtered_meta = {key: value for key, value in msg_meta.items() if value}
+        if filtered_meta:
+            msg_record["metadata"] = filtered_meta
         ctx.metadata_store.append_transcript_messages(
             session_id=session,
             messages=[msg_record],
